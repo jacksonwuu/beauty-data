@@ -1,0 +1,24 @@
+{
+  "name": "@beauty-data/globe-core",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "peerDependencies": {
+    "@react-three/drei": "^10.1.2",
+    "@react-three/fiber": "^9.1.2",
+    "react": "^19.1.0",
+    "three": "^0.176.0"
+  },
+  "dependencies": {
+    "topojson-client": "^3.1.0",
+    "world-atlas": "^2.0.2"
+  },
+  "devDependencies": {
+    "@types/react": "^19.1.6",
+    "@types/three": "^0.176.0",
+    "@types/topojson-client": "^3.1.5"
+  }
+}
