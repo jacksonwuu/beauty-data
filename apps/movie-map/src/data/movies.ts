@@ -89,3 +89,141 @@ export const movies: Movie[] = seedMovies.map(
     runtime
   })
 );
+
+const countryTargets: Record<string, { name: string; total: number }> = {
+  AR: { name: "Argentina", total: 10 },
+  AT: { name: "Austria", total: 5 },
+  AU: { name: "Australia", total: 12 },
+  BD: { name: "Bangladesh", total: 7 },
+  BE: { name: "Belgium", total: 5 },
+  BR: { name: "Brazil", total: 16 },
+  CA: { name: "Canada", total: 12 },
+  CH: { name: "Switzerland", total: 5 },
+  CL: { name: "Chile", total: 8 },
+  CN: { name: "China", total: 22 },
+  CO: { name: "Colombia", total: 8 },
+  CU: { name: "Cuba", total: 5 },
+  DE: { name: "Germany", total: 12 },
+  DK: { name: "Denmark", total: 5 },
+  EG: { name: "Egypt", total: 8 },
+  ES: { name: "Spain", total: 10 },
+  ET: { name: "Ethiopia", total: 6 },
+  FI: { name: "Finland", total: 5 },
+  FR: { name: "France", total: 24 },
+  GB: { name: "United Kingdom", total: 12 },
+  GH: { name: "Ghana", total: 5 },
+  GR: { name: "Greece", total: 7 },
+  ID: { name: "Indonesia", total: 12 },
+  IE: { name: "Ireland", total: 5 },
+  IN: { name: "India", total: 22 },
+  IR: { name: "Iran", total: 7 },
+  IT: { name: "Italy", total: 10 },
+  JP: { name: "Japan", total: 18 },
+  KE: { name: "Kenya", total: 6 },
+  KR: { name: "South Korea", total: 10 },
+  MA: { name: "Morocco", total: 6 },
+  MX: { name: "Mexico", total: 12 },
+  MY: { name: "Malaysia", total: 7 },
+  NG: { name: "Nigeria", total: 8 },
+  NL: { name: "Netherlands", total: 6 },
+  NO: { name: "Norway", total: 5 },
+  NZ: { name: "New Zealand", total: 5 },
+  PE: { name: "Peru", total: 7 },
+  PH: { name: "Philippines", total: 8 },
+  PK: { name: "Pakistan", total: 8 },
+  PL: { name: "Poland", total: 8 },
+  PT: { name: "Portugal", total: 6 },
+  RU: { name: "Russia", total: 16 },
+  SA: { name: "Saudi Arabia", total: 7 },
+  SE: { name: "Sweden", total: 6 },
+  TH: { name: "Thailand", total: 8 },
+  TR: { name: "Turkey", total: 10 },
+  UA: { name: "Ukraine", total: 7 },
+  US: { name: "United States", total: 24 },
+  VN: { name: "Vietnam", total: 8 },
+  ZA: { name: "South Africa", total: 8 }
+};
+
+const titleParts = {
+  prefix: [
+    "Midnight",
+    "Golden",
+    "Silent",
+    "Electric",
+    "Paper",
+    "Velvet",
+    "Northern",
+    "Crimson",
+    "Hidden",
+    "Last",
+    "Little",
+    "Blue",
+    "Glass",
+    "Summer",
+    "Winter",
+    "Borrowed"
+  ],
+  subject: [
+    "Station",
+    "Harbor",
+    "Letters",
+    "Courtyard",
+    "Signal",
+    "Orchard",
+    "Avenue",
+    "Reel",
+    "Lantern",
+    "Bridge",
+    "Room",
+    "Market",
+    "Archive",
+    "Rain",
+    "Map",
+    "Window"
+  ]
+};
+
+const genreSets = [
+  ["Drama"],
+  ["Mystery", "Drama"],
+  ["Romance"],
+  ["Thriller"],
+  ["Adventure", "Drama"],
+  ["Comedy", "Drama"],
+  ["Fantasy", "Drama"],
+  ["Crime", "Noir"]
+];
+
+function generatedMovie(countryCode: string, countryName: string, localIndex: number, globalIndex: number): Movie {
+  const prefix = titleParts.prefix[(localIndex + globalIndex) % titleParts.prefix.length];
+  const subject = titleParts.subject[(localIndex * 3 + globalIndex) % titleParts.subject.length];
+  const year = 1957 + ((localIndex * 7 + globalIndex * 3) % 68);
+  const title = `${prefix} ${subject} ${String(localIndex + 1).padStart(2, "0")}`;
+  const rating = Number((6.8 + ((localIndex * 13 + globalIndex) % 24) / 10).toFixed(1));
+  const runtime = `${88 + ((localIndex * 5 + globalIndex) % 54)} min`;
+  const genres = genreSets[(localIndex + globalIndex) % genreSets.length];
+
+  return {
+    id: `movie-${countryCode.toLowerCase()}-${String(localIndex + 1).padStart(3, "0")}`,
+    title,
+    countryCode,
+    countryName,
+    year,
+    posterUrl: poster(title, year, globalIndex),
+    summary: `A generated ${countryName} sample film used to stress test dense poster placement, stable ordering, and layout transitions on the globe.`,
+    genres: [...genres],
+    rating,
+    runtime
+  };
+}
+
+const generatedMovies = Object.entries(countryTargets).flatMap(([countryCode, target], countryIndex) => {
+  const existingCount = movies.filter((movie) => movie.countryCode === countryCode).length;
+  const missingCount = Math.max(0, target.total - existingCount);
+
+  return Array.from({ length: missingCount }, (_, index) =>
+    generatedMovie(countryCode, target.name, existingCount + index, 1000 + countryIndex * 100 + index)
+  );
+});
+
+movies.push(...generatedMovies);

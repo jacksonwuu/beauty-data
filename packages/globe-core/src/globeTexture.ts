@@ -65,6 +65,16 @@ function drawCountryRings(context: CanvasRenderingContext2D, country: CountryFea
   });
 }
 
+function fillSouthPolarCap(context: CanvasRenderingContext2D, countries: CountryFeature[]) {
+  const hasAntarctica = countries.some((country) => country.id.padStart(3, "0") === "010");
+
+  if (!hasAntarctica) {
+    return;
+  }
+
+  context.fillRect(0, TEXTURE_HEIGHT - 16, TEXTURE_WIDTH, 16);
+}
+
 function makeCanvasTexture(canvas: HTMLCanvasElement) {
   const texture = new THREE.CanvasTexture(canvas);
   texture.colorSpace = THREE.SRGBColorSpace;
@@ -94,6 +104,8 @@ export function makeGlobeTexture(countries: CountryFeature[]) {
   countries.forEach((country) => {
     drawCountryRings(context, country);
   });
+
+  fillSouthPolarCap(context, countries);
 
   return makeCanvasTexture(canvas);
 }

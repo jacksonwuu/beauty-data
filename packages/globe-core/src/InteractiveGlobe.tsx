@@ -6,9 +6,10 @@ import * as THREE from "three";
 import { BillboardLayer } from "./BillboardLayer";
 import { CountryBoundaryLayer } from "./CountryBoundaryLayer";
 import { DEFAULT_COUNTRY_COORDINATES, WORLD_COUNTRIES } from "./countries";
+import { countryIdToAlpha2 } from "./countryCodes";
 import { countryCenterVector, findCountryAtLatLon, GLOBE_RADIUS, vector3ToLatLon } from "./geo";
 import { makeGlobeTexture } from "./globeTexture";
-import type { CountryFeature, GlobeCoreProps } from "./types";
+import type { CountryFeature, GlobeBillboardItem, GlobeCoreProps } from "./types";
 
 const atmosphereVertexShader = `
   varying vec3 vWorldNormal;
@@ -35,13 +36,14 @@ const atmosphereFragmentShader = `
     vec3 viewDirection = normalize(cameraPosition - vWorldPosition);
     float facing = abs(dot(normalize(vWorldNormal), viewDirection));
     float rim = 1.0 - facing;
-    float softHalo = pow(smoothstep(0.16, 1.0, rim), 1.35) * 0.46;
-    float brightEdge = pow(smoothstep(0.56, 1.0, rim), 1.95);
+    float outerFade = 1.0 - smoothstep(0.34, 0.78, rim);
+    float softHalo = pow(smoothstep(0.02, 0.28, rim) * outerFade, 0.9) * 0.82;
+    float brightEdge = smoothstep(0.16, 0.32, rim) * (1.0 - smoothstep(0.4, 0.7, rim));
     float ionRipple = 0.95 + 0.05 * sin((vWorldPosition.y * 7.0) + uTime * 0.32);
-    float alpha = clamp((softHalo + brightEdge * 0.88) * uIntensity * ionRipple, 0.0, 0.78);
+    float alpha = clamp((softHalo + brightEdge * 0.46) * uIntensity * ionRipple, 0.0, 0.44);
     vec3 color = mix(uOuterColor, uInnerColor, brightEdge);
 
-    if (alpha < 0.01) {
+    if (alpha < 0.006) {
       discard;
     }
 
@@ -78,7 +80,7 @@ function AtmosphereLayer() {
   });
 
   return (
-    <mesh scale={1.058} renderOrder={1}>
+    <mesh scale={1.12} renderOrder={1}>
       <sphereGeometry args={[GLOBE_RADIUS, 160, 160]} />
       <primitive object={atmosphereMaterial} ref={materialRef} attach="material" />
     </mesh>
@@ -92,6 +94,7 @@ function GlobeScene<TPayload>({
   hoveredCountryId,
   selectedItemId,
   billboardScale = 1,
+  billboardLayout = "flat",
   enableGlobeShading = false,
   enableAtmosphere = true,
   showBacksideBillboards = false,
@@ -105,9 +108,25 @@ function GlobeScene<TPayload>({
   const controlsRef = useRef<ComponentRef<typeof OrbitControls>>(null);
   const globeGroupRef = useRef<THREE.Group>(null);
   const targetCameraPositionRef = useRef<THREE.Vector3 | null>(null);
+  const controlsDraggingRef = useRef(false);
+  const controlsInteractingRef = useRef(false);
+  const clearControlsDraggingFrameRef = useRef<number | null>(null);
   const [internalHoveredCountry, setInternalHoveredCountry] = useState<CountryFeature | null>(null);
   const effectiveHoveredCountryId = hoveredCountryId ?? internalHoveredCountry?.id ?? null;
   const countries = useMemo(() => WORLD_COUNTRIES, []);
+  const countryByCode = useMemo(() => {
+    const mappedCountries = new Map<string, CountryFeature>();
+
+    countries.forEach((country) => {
+      const countryCode = countryIdToAlpha2(country.id);
+
+      if (countryCode) {
+        mappedCountries.set(countryCode, country);
+      }
+    });
+
+    return mappedCountries;
+  }, [countries]);
   const globeTexture = useMemo(() => makeGlobeTexture(countries), [countries]);
 
   const setCanvasCursor = (cursor: string) => {
@@ -116,6 +135,13 @@ function GlobeScene<TPayload>({
     if (canvas instanceof HTMLCanvasElement) {
       canvas.style.cursor = cursor;
     }
+  };
+
+  const findCountryFromPoint = (point: THREE.Vector3) => {
+    const localPoint = point.clone();
+    globeGroupRef.current?.worldToLocal(localPoint);
+    const { lat, lon } = vector3ToLatLon(localPoint);
+    return findCountryAtLatLon(lat, lon, countries);
   };
 
   useFrame(() => {
@@ -139,10 +165,7 @@ function GlobeScene<TPayload>({
   });
 
   const updateHoveredCountry = (event: ThreeEvent<PointerEvent>) => {
-    const localPoint = event.point.clone();
-    globeGroupRef.current?.worldToLocal(localPoint);
-    const { lat, lon } = vector3ToLatLon(localPoint);
-    const country = findCountryAtLatLon(lat, lon, countries);
+    const country = findCountryFromPoint(event.point);
 
     if (country?.id !== internalHoveredCountry?.id) {
       setInternalHoveredCountry(country);
@@ -156,6 +179,30 @@ function GlobeScene<TPayload>({
     setInternalHoveredCountry(null);
     onCountryHover?.(null);
     setCanvasCursor("grab");
+  };
+
+  const updateHoveredCountryFromItem = (item: GlobeBillboardItem<TPayload> | null) => {
+    if (!item) {
+      clearHoveredCountry();
+      return;
+    }
+
+    const country = countryByCode.get(item.countryCode) ?? null;
+
+    if (country?.id !== internalHoveredCountry?.id) {
+      setInternalHoveredCountry(country);
+      onCountryHover?.(country);
+    }
+
+    setCanvasCursor(country ? "pointer" : "grab");
+  };
+
+  const handleItemHover = (
+    item: Parameters<NonNullable<typeof onItemHover>>[0],
+    event?: Parameters<NonNullable<typeof onItemHover>>[1]
+  ) => {
+    updateHoveredCountryFromItem(item);
+    onItemHover?.(item, event);
   };
 
   const focusCountry = (country: CountryFeature | null, shouldNotify = true) => {
@@ -186,6 +233,30 @@ function GlobeScene<TPayload>({
     focusCountry(country ?? null, false);
   }, [countries, focusedCountryId]);
 
+  const cancelControlsDraggingClear = () => {
+    if (clearControlsDraggingFrameRef.current !== null) {
+      window.cancelAnimationFrame(clearControlsDraggingFrameRef.current);
+      clearControlsDraggingFrameRef.current = null;
+    }
+  };
+
+  const handleCountryClick = (event: ThreeEvent<MouseEvent>) => {
+    if (controlsDraggingRef.current) {
+      controlsDraggingRef.current = false;
+      cancelControlsDraggingClear();
+      return;
+    }
+
+    focusCountry(findCountryFromPoint(event.point));
+  };
+
+  const clearControlsDraggingNextFrame = () => {
+    clearControlsDraggingFrameRef.current = window.requestAnimationFrame(() => {
+      controlsDraggingRef.current = false;
+      clearControlsDraggingFrameRef.current = null;
+    });
+  };
+
   return (
     <>
       <ambientLight intensity={1.4} />
@@ -196,7 +267,7 @@ function GlobeScene<TPayload>({
         <mesh
           onPointerMove={updateHoveredCountry}
           onPointerOut={clearHoveredCountry}
-          onClick={() => focusCountry(internalHoveredCountry)}
+          onClick={handleCountryClick}
         >
           <sphereGeometry args={[GLOBE_RADIUS, 160, 160]} />
           {enableGlobeShading ? (
@@ -222,12 +293,14 @@ function GlobeScene<TPayload>({
         />
         <BillboardLayer
           items={items}
+          countries={countries}
           countryCoordinates={countryCoordinates}
           hoveredCountryId={effectiveHoveredCountryId}
           selectedItemId={selectedItemId}
           billboardScale={billboardScale}
+          billboardLayout={billboardLayout}
           showBacksideBillboards={showBacksideBillboards}
-          onItemHover={onItemHover}
+          onItemHover={handleItemHover}
           onItemClick={onItemClick}
         />
       </group>
@@ -241,7 +314,22 @@ function GlobeScene<TPayload>({
         dampingFactor={0.08}
         enableDamping
         onStart={() => {
+          cancelControlsDraggingClear();
           targetCameraPositionRef.current = null;
+          controlsInteractingRef.current = true;
+          controlsDraggingRef.current = false;
+        }}
+        onChange={() => {
+          if (controlsInteractingRef.current) {
+            controlsDraggingRef.current = true;
+          }
+        }}
+        onEnd={() => {
+          controlsInteractingRef.current = false;
+
+          if (controlsDraggingRef.current) {
+            clearControlsDraggingNextFrame();
+          }
         }}
       />
     </>

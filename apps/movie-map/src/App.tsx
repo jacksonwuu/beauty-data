@@ -1,4 +1,10 @@
-import { InteractiveGlobe, WORLD_COUNTRIES, type CountryFeature, type GlobeBillboardItem } from "@beauty-data/globe-core";
+import {
+  InteractiveGlobe,
+  WORLD_COUNTRIES,
+  type CountryFeature,
+  type GlobeBillboardItem,
+  type GlobeBillboardLayoutMode
+} from "@beauty-data/globe-core";
 import { ChevronDown, MapPinned } from "lucide-react";
 import { useMemo, useState } from "react";
 import { MovieDetail } from "./components/MovieDetail";
@@ -16,6 +22,7 @@ function App() {
   const [countryMenuOpen, setCountryMenuOpen] = useState(false);
   const [countrySearch, setCountrySearch] = useState("");
   const [posterScale, setPosterScale] = useState(1);
+  const [posterLayout, setPosterLayout] = useState<GlobeBillboardLayoutMode>("flat");
   const [hoveredMovieTooltip, setHoveredMovieTooltip] = useState<{ movie: Movie; x: number; y: number } | null>(null);
 
   const countries = useMemo(
@@ -60,6 +67,7 @@ function App() {
           focusedCountryId={selectedCountry?.id}
           selectedItemId={selectedMovie?.id}
           billboardScale={posterScale}
+          billboardLayout={posterLayout}
           enableGlobeShading={false}
           showBacksideBillboards={false}
           onCountryHover={setHoveredCountry}
@@ -153,6 +161,24 @@ function App() {
               onChange={(event) => setSelectedYear(Number(event.target.value))}
             />
             <span>{maxYear}</span>
+          </div>
+        </div>
+
+        <div className="dock-control dock-control--layout">
+          <div className="dock-control-header">
+            <span>Layout</span>
+          </div>
+          <div className="layout-toggle" role="group" aria-label="Poster layout">
+            {(["flat", "standing"] as const).map((layout) => (
+              <button
+                key={layout}
+                className={posterLayout === layout ? "layout-toggle-button layout-toggle-button--active" : "layout-toggle-button"}
+                type="button"
+                onClick={() => setPosterLayout(layout)}
+              >
+                {layout === "flat" ? "Flat" : "Standing"}
+              </button>
+            ))}
           </div>
         </div>
 

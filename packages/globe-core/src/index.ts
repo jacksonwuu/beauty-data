@@ -10,4 +10,10 @@ export {
   vector3ToLatLon
 } from "./geo";
 export { InteractiveGlobe } from "./InteractiveGlobe";
-export type { CountryCoordinateMap, CountryFeature, GlobeBillboardItem, GlobeCoreProps } from "./types";
+export type {
+  CountryCoordinateMap,
+  CountryFeature,
+  GlobeBillboardItem,
+  GlobeBillboardLayoutMode,
+  GlobeCoreProps
+} from "./types";
