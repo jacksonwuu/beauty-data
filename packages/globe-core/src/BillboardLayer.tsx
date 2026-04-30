@@ -3,24 +3,29 @@ import { ThreeEvent, useFrame } from "@react-three/fiber";
 import type { CSSProperties } from "react";
 import { useMemo, useRef, useState } from "react";
 import * as THREE from "three";
+import { countryIdToAlpha2 } from "./countryCodes";
 import { latLonToVector3 } from "./geo";
 import type { CountryCoordinateMap, GlobeBillboardItem } from "./types";
 
 interface BillboardLayerProps<TPayload> {
   items: Array<GlobeBillboardItem<TPayload>>;
   countryCoordinates: CountryCoordinateMap;
+  hoveredCountryId?: string | null;
   selectedItemId?: string | null;
   billboardScale?: number;
   showBacksideBillboards?: boolean;
+  onItemHover?: (item: GlobeBillboardItem<TPayload> | null, event?: { clientX: number; clientY: number }) => void;
   onItemClick?: (item: GlobeBillboardItem<TPayload>) => void;
 }
 
 interface BillboardItemProps<TPayload> {
   item: GlobeBillboardItem<TPayload>;
   position: THREE.Vector3;
+  countryActive: boolean;
   selected: boolean;
   billboardScale: number;
   showBacksideBillboards: boolean;
+  onItemHover?: (item: GlobeBillboardItem<TPayload> | null, event?: { clientX: number; clientY: number }) => void;
   onItemClick?: (item: GlobeBillboardItem<TPayload>) => void;
 }
 
@@ -39,9 +44,11 @@ function offsetForIndex(index: number): THREE.Vector3 {
 function BillboardItem<TPayload>({
   item,
   position,
+  countryActive,
   selected,
   billboardScale,
   showBacksideBillboards,
+  onItemHover,
   onItemClick
 }: BillboardItemProps<TPayload>) {
   const groupRef = useRef<THREE.Group>(null);
@@ -84,7 +91,13 @@ function BillboardItem<TPayload>({
           center
           zIndexRange={[posterZIndex, posterZIndex]}
           wrapperClass={raised ? "globe-poster-html globe-poster-html--raised" : "globe-poster-html"}
-          style={{ pointerEvents: "auto", "--poster-scale": billboardScale } as CSSProperties}
+          style={
+            {
+              pointerEvents: "auto",
+              "--poster-scale": billboardScale,
+              "--country-poster-boost": countryActive ? 1.12 : 1
+            } as CSSProperties
+          }
         >
           <button
             className={[
@@ -95,13 +108,34 @@ function BillboardItem<TPayload>({
               .filter(Boolean)
               .join(" ")}
             type="button"
-            onPointerEnter={() => setHovered(true)}
-            onPointerOver={() => setHovered(true)}
-            onPointerLeave={() => setHovered(false)}
-            onMouseEnter={() => setHovered(true)}
-            onMouseLeave={() => setHovered(false)}
+            onPointerEnter={(event) => {
+              setHovered(true);
+              onItemHover?.(item, event.nativeEvent);
+            }}
+            onPointerMove={(event) => {
+              onItemHover?.(item, event.nativeEvent);
+            }}
+            onPointerOver={(event) => {
+              setHovered(true);
+              onItemHover?.(item, event.nativeEvent);
+            }}
+            onPointerLeave={() => {
+              setHovered(false);
+              onItemHover?.(null);
+            }}
+            onMouseEnter={(event) => {
+              setHovered(true);
+              onItemHover?.(item, event.nativeEvent);
+            }}
+            onMouseLeave={() => {
+              setHovered(false);
+              onItemHover?.(null);
+            }}
             onFocus={() => setHovered(true)}
-            onBlur={() => setHovered(false)}
+            onBlur={() => {
+              setHovered(false);
+              onItemHover?.(null);
+            }}
             onPointerDown={(event) => {
               event.stopPropagation();
             }}
@@ -128,11 +162,14 @@ function BillboardItem<TPayload>({
 export function BillboardLayer<TPayload>({
   items,
   countryCoordinates,
+  hoveredCountryId,
   selectedItemId,
   billboardScale = 1,
   showBacksideBillboards = false,
+  onItemHover,
   onItemClick
 }: BillboardLayerProps<TPayload>) {
+  const hoveredCountryCode = countryIdToAlpha2(hoveredCountryId);
   const positionedItems = useMemo(() => {
     const perCountryIndex = new Map<string, number>();
 
@@ -146,7 +183,7 @@ export function BillboardLayer<TPayload>({
 
         const index = perCountryIndex.get(item.countryCode) ?? 0;
         perCountryIndex.set(item.countryCode, index + 1);
-        const base = latLonToVector3(coordinate.lat, coordinate.lon, 2.16 + (index % 4) * 0.012);
+        const base = latLonToVector3(coordinate.lat, coordinate.lon, 2.035 + (index % 4) * 0.004);
         const offset = item.positionOffset
           ? new THREE.Vector3(...item.positionOffset)
           : offsetForIndex(index);
@@ -166,9 +203,11 @@ export function BillboardLayer<TPayload>({
             key={item.id}
             item={item}
             position={position}
+            countryActive={Boolean(hoveredCountryCode && item.countryCode === hoveredCountryCode)}
             selected={selected}
             billboardScale={billboardScale}
             showBacksideBillboards={showBacksideBillboards}
+            onItemHover={onItemHover}
             onItemClick={onItemClick}
           />
         );

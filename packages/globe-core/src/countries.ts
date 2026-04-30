@@ -1,5 +1,5 @@
 import { feature } from "topojson-client";
-import countries110 from "world-atlas/countries-110m.json";
+import countries50 from "world-atlas/countries-50m.json";
 import type { CountryCoordinateMap, CountryFeature } from "./types";
 
 type GeoGeometry = {
@@ -32,8 +32,8 @@ function toCountryFeature(geoFeature: GeoFeature, index: number): CountryFeature
 }
 
 const countriesGeoJson = feature(
-  countries110 as never,
-  (countries110 as { objects: { countries: unknown } }).objects.countries as never
+  countries50 as never,
+  (countries50 as { objects: { countries: unknown } }).objects.countries as never
 ) as unknown as { features: GeoFeature[] };
 
 export const WORLD_COUNTRIES: CountryFeature[] = countriesGeoJson.features

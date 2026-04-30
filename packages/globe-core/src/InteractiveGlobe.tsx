@@ -10,6 +10,81 @@ import { countryCenterVector, findCountryAtLatLon, GLOBE_RADIUS, vector3ToLatLon
 import { makeGlobeTexture } from "./globeTexture";
 import type { CountryFeature, GlobeCoreProps } from "./types";
 
+const atmosphereVertexShader = `
+  varying vec3 vWorldNormal;
+  varying vec3 vWorldPosition;
+
+  void main() {
+    vec4 worldPosition = modelMatrix * vec4(position, 1.0);
+    vWorldPosition = worldPosition.xyz;
+    vWorldNormal = normalize(mat3(modelMatrix) * normal);
+    gl_Position = projectionMatrix * viewMatrix * worldPosition;
+  }
+`;
+
+const atmosphereFragmentShader = `
+  uniform vec3 uInnerColor;
+  uniform vec3 uOuterColor;
+  uniform float uIntensity;
+  uniform float uTime;
+
+  varying vec3 vWorldNormal;
+  varying vec3 vWorldPosition;
+
+  void main() {
+    vec3 viewDirection = normalize(cameraPosition - vWorldPosition);
+    float facing = abs(dot(normalize(vWorldNormal), viewDirection));
+    float rim = 1.0 - facing;
+    float softHalo = pow(smoothstep(0.16, 1.0, rim), 1.35) * 0.46;
+    float brightEdge = pow(smoothstep(0.56, 1.0, rim), 1.95);
+    float ionRipple = 0.95 + 0.05 * sin((vWorldPosition.y * 7.0) + uTime * 0.32);
+    float alpha = clamp((softHalo + brightEdge * 0.88) * uIntensity * ionRipple, 0.0, 0.78);
+    vec3 color = mix(uOuterColor, uInnerColor, brightEdge);
+
+    if (alpha < 0.01) {
+      discard;
+    }
+
+    gl_FragColor = vec4(color, alpha);
+  }
+`;
+
+function AtmosphereLayer() {
+  const materialRef = useRef<THREE.ShaderMaterial>(null);
+
+  const atmosphereMaterial = useMemo(
+    () =>
+      new THREE.ShaderMaterial({
+        uniforms: {
+          uInnerColor: { value: new THREE.Color("#a8f7ff") },
+          uOuterColor: { value: new THREE.Color("#2c9dff") },
+          uIntensity: { value: 0.92 },
+          uTime: { value: 0 }
+        },
+        vertexShader: atmosphereVertexShader,
+        fragmentShader: atmosphereFragmentShader,
+        transparent: true,
+        blending: THREE.AdditiveBlending,
+        depthWrite: false,
+        side: THREE.BackSide
+      }),
+    []
+  );
+
+  useFrame(({ clock }) => {
+    if (materialRef.current) {
+      materialRef.current.uniforms.uTime.value = clock.elapsedTime;
+    }
+  });
+
+  return (
+    <mesh scale={1.058} renderOrder={1}>
+      <sphereGeometry args={[GLOBE_RADIUS, 160, 160]} />
+      <primitive object={atmosphereMaterial} ref={materialRef} attach="material" />
+    </mesh>
+  );
+}
+
 function GlobeScene<TPayload>({
   items,
   countryCoordinates = DEFAULT_COUNTRY_COORDINATES,
@@ -18,10 +93,12 @@ function GlobeScene<TPayload>({
   selectedItemId,
   billboardScale = 1,
   enableGlobeShading = false,
+  enableAtmosphere = true,
   showBacksideBillboards = false,
   polarAngleLimit = 0.16,
   onCountryHover,
   onCountryClick,
+  onItemHover,
   onItemClick
 }: GlobeCoreProps<TPayload>) {
   const { camera } = useThree();
@@ -113,7 +190,7 @@ function GlobeScene<TPayload>({
     <>
       <ambientLight intensity={1.4} />
       <directionalLight position={[5, 4, 6]} intensity={1.8} color="#f7f3df" />
-      <Stars radius={50} depth={16} count={1300} factor={2.4} saturation={0.2} fade speed={0.25} />
+      <Stars radius={58} depth={18} count={650} factor={1.25} saturation={0} fade speed={0.06} />
 
       <group ref={globeGroupRef}>
         <mesh
@@ -121,7 +198,7 @@ function GlobeScene<TPayload>({
           onPointerOut={clearHoveredCountry}
           onClick={() => focusCountry(internalHoveredCountry)}
         >
-          <sphereGeometry args={[GLOBE_RADIUS, 96, 96]} />
+          <sphereGeometry args={[GLOBE_RADIUS, 160, 160]} />
           {enableGlobeShading ? (
             <meshStandardMaterial
               color="#ffffff"
@@ -136,18 +213,21 @@ function GlobeScene<TPayload>({
           )}
         </mesh>
 
-        <mesh scale={1.012}>
-          <sphereGeometry args={[GLOBE_RADIUS, 96, 96]} />
-          <meshBasicMaterial color="#5bc9d9" transparent opacity={0.055} side={THREE.BackSide} />
-        </mesh>
+        {enableAtmosphere ? <AtmosphereLayer /> : null}
 
-        <CountryBoundaryLayer countries={countries} hoveredCountryId={effectiveHoveredCountryId} />
+        <CountryBoundaryLayer
+          countries={countries}
+          hoveredCountryId={effectiveHoveredCountryId}
+          focusedCountryId={focusedCountryId}
+        />
         <BillboardLayer
           items={items}
           countryCoordinates={countryCoordinates}
+          hoveredCountryId={effectiveHoveredCountryId}
           selectedItemId={selectedItemId}
           billboardScale={billboardScale}
           showBacksideBillboards={showBacksideBillboards}
+          onItemHover={onItemHover}
           onItemClick={onItemClick}
         />
       </group>
@@ -160,6 +240,9 @@ function GlobeScene<TPayload>({
         maxPolarAngle={Math.PI - polarAngleLimit}
         dampingFactor={0.08}
         enableDamping
+        onStart={() => {
+          targetCameraPositionRef.current = null;
+        }}
       />
     </>
   );
@@ -167,7 +250,11 @@ function GlobeScene<TPayload>({
 
 export function InteractiveGlobe<TPayload>(props: GlobeCoreProps<TPayload>) {
   return (
-    <Canvas camera={{ position: [0, 0, 4.8], fov: 42 }} gl={{ antialias: true, alpha: true }}>
+    <Canvas
+      camera={{ position: [0, 0, 4.8], fov: 42 }}
+      dpr={[1, 2]}
+      gl={{ antialias: true, alpha: true, powerPreference: "high-performance" }}
+    >
       <color attach="background" args={["#050709"]} />
       <GlobeScene {...props} />
     </Canvas>

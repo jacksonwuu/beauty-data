@@ -16,6 +16,7 @@ function App() {
   const [countryMenuOpen, setCountryMenuOpen] = useState(false);
   const [countrySearch, setCountrySearch] = useState("");
   const [posterScale, setPosterScale] = useState(1);
+  const [hoveredMovieTooltip, setHoveredMovieTooltip] = useState<{ movie: Movie; x: number; y: number } | null>(null);
 
   const countries = useMemo(
     () => [...WORLD_COUNTRIES].sort((first, second) => first.name.localeCompare(second.name)),
@@ -63,6 +64,14 @@ function App() {
           showBacksideBillboards={false}
           onCountryHover={setHoveredCountry}
           onCountryClick={setSelectedCountry}
+          onItemHover={(item, event) => {
+            if (!item || !event) {
+              setHoveredMovieTooltip(null);
+              return;
+            }
+
+            setHoveredMovieTooltip({ movie: item.payload, x: event.clientX, y: event.clientY });
+          }}
           onItemClick={(item) => setSelectedMovie(item.payload)}
         />
       </section>
@@ -92,7 +101,7 @@ function App() {
             </div>
             {filteredCountries.map((country) => (
               <button
-                key={country.id}
+                key={`${country.id}-${country.name}`}
                 className={selectedCountry?.id === country.id ? "country-option country-option--active" : "country-option"}
                 type="button"
                 onClick={() => {
@@ -110,9 +119,12 @@ function App() {
         ) : null}
       </aside>
 
-      <section className="timeline-panel" aria-label="Movie year filter">
-        <div className="poster-size-control">
-          <span>Poster size</span>
+      <section className="control-dock" aria-label="Map filters">
+        <div className="dock-control">
+          <div className="dock-control-header">
+            <span>Poster size</span>
+            <strong>{Math.round(posterScale * 100)}%</strong>
+          </div>
           <input
             aria-label="Poster cover size"
             type="range"
@@ -122,29 +134,41 @@ function App() {
             value={posterScale}
             onChange={(event) => setPosterScale(Number(event.target.value))}
           />
-          <strong>{Math.round(posterScale * 100)}%</strong>
         </div>
-        <div className="timeline-copy">
-          <span>{minYear}</span>
-          <strong>{selectedYear}</strong>
-          <span>{maxYear}</span>
+
+        <div className="dock-control">
+          <div className="dock-control-header">
+            <span>Release year</span>
+            <strong>{selectedYear}</strong>
+          </div>
+          <div className="range-with-endpoints">
+            <span>{minYear}</span>
+            <input
+              aria-label="Filter movies by year"
+              type="range"
+              min={minYear}
+              max={maxYear}
+              step={1}
+              value={selectedYear}
+              onChange={(event) => setSelectedYear(Number(event.target.value))}
+            />
+            <span>{maxYear}</span>
+          </div>
         </div>
-        <input
-          aria-label="Filter movies by year"
-          type="range"
-          min={minYear}
-          max={maxYear}
-          step={1}
-          value={selectedYear}
-          onChange={(event) => setSelectedYear(Number(event.target.value))}
-        />
-        <div className="timeline-stats">
-          <span>{visibleMovies.length} posters in range</span>
-          <span>Showing films released in or before {selectedYear}</span>
+
+        <div className="dock-summary">
+          <strong>{visibleMovies.length}</strong>
+          <span>posters</span>
         </div>
       </section>
 
       <MovieDetail movie={selectedMovie} onClose={() => setSelectedMovie(null)} />
+      {hoveredMovieTooltip ? (
+        <div className="movie-tooltip" style={{ left: hoveredMovieTooltip.x + 14, top: hoveredMovieTooltip.y + 14 }}>
+          <strong>{hoveredMovieTooltip.movie.title}</strong>
+          <span>{hoveredMovieTooltip.movie.rating.toFixed(1)} / 10</span>
+        </div>
+      ) : null}
     </main>
   );
 }
