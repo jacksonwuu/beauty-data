@@ -2,12 +2,29 @@
   "name": "beauty-data",
   "version": "0.1.0",
   "private": true,
+  "type": "module",
   "packageManager": "pnpm@10.12.4",
   "scripts": {
     "dev": "pnpm --filter movie-map dev",
-    "build": "pnpm --filter movie-map build"
+    "generate:movies": "pnpm --filter movie-map generate:movies",
+    "posters:download": "pnpm --filter movie-map posters:download",
+    "build": "pnpm --filter movie-map build",
+    "typecheck": "pnpm -r typecheck",
+    "lint": "eslint .",
+    "lint:fix": "eslint . --fix",
+    "format": "prettier . --write",
+    "format:check": "prettier . --check",
+    "check": "pnpm typecheck && pnpm lint && pnpm format:check && pnpm build"
   },
   "devDependencies": {
-    "typescript": "^5.8.3"
+    "@eslint/js": "^10.0.1",
+    "eslint": "^10.3.0",
+    "eslint-config-prettier": "^10.1.8",
+    "eslint-plugin-react-hooks": "^7.1.1",
+    "eslint-plugin-react-refresh": "^0.5.2",
+    "prettier": "^3.8.3",
+    "prettier-plugin-tailwindcss": "^0.8.0",
+    "typescript": "^5.8.3",
+    "typescript-eslint": "^8.59.1"
   }
 }

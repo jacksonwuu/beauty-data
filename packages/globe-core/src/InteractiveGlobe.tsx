@@ -1,15 +1,14 @@
 import { OrbitControls, Stars } from "@react-three/drei";
 import { Canvas, ThreeEvent, useFrame, useThree } from "@react-three/fiber";
 import type { ComponentRef } from "react";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import * as THREE from "three";
 import { BillboardLayer } from "./BillboardLayer";
 import { CountryBoundaryLayer } from "./CountryBoundaryLayer";
 import { DEFAULT_COUNTRY_COORDINATES, WORLD_COUNTRIES } from "./countries";
-import { countryIdToAlpha2 } from "./countryCodes";
 import { countryCenterVector, findCountryAtLatLon, GLOBE_RADIUS, vector3ToLatLon } from "./geo";
 import { makeGlobeTexture } from "./globeTexture";
-import type { CountryFeature, GlobeBillboardItem, GlobeCoreProps } from "./types";
+import type { CountryFeature, GlobeCoreProps } from "./types";
 
 const atmosphereVertexShader = `
   varying vec3 vWorldNormal;
@@ -81,7 +80,7 @@ function AtmosphereLayer() {
 
   return (
     <mesh scale={1.12} renderOrder={1}>
-      <sphereGeometry args={[GLOBE_RADIUS, 160, 160]} />
+      <sphereGeometry args={[GLOBE_RADIUS, 112, 112]} />
       <primitive object={atmosphereMaterial} ref={materialRef} attach="material" />
     </mesh>
   );
@@ -98,6 +97,7 @@ function GlobeScene<TPayload>({
   billboardPlacement = "rows",
   minCameraDistance = 2.18,
   maxCameraDistance = 7.2,
+  zoomSpeed = 0.32,
   enableGlobeShading = false,
   enableAtmosphere = true,
   showBacksideBillboards = false,
@@ -170,6 +170,10 @@ function GlobeScene<TPayload>({
     setCanvasCursor("grab");
   };
 
+  const stopProgrammaticCameraMove = () => {
+    targetCameraPositionRef.current = null;
+  };
+
   const handleItemHover = (
     item: Parameters<NonNullable<typeof onItemHover>>[0],
     event?: Parameters<NonNullable<typeof onItemHover>>[1]
@@ -177,25 +181,28 @@ function GlobeScene<TPayload>({
     onItemHover?.(item, event);
   };
 
-  const focusCountry = (country: CountryFeature | null, shouldNotify = true) => {
-    if (!country) {
-      return;
-    }
+  const focusCountry = useCallback(
+    (country: CountryFeature | null, shouldNotify = true) => {
+      if (!country) {
+        return;
+      }
 
-    const currentDistance = camera.position.length();
-    const distance = THREE.MathUtils.clamp(currentDistance, minCameraDistance, maxCameraDistance);
-    const targetPosition = countryCenterVector(country, distance);
-    const clampedSpherical = new THREE.Spherical().setFromVector3(targetPosition);
-    clampedSpherical.phi = THREE.MathUtils.clamp(
-      clampedSpherical.phi,
-      polarAngleLimit,
-      Math.PI - polarAngleLimit
-    );
-    targetCameraPositionRef.current = new THREE.Vector3().setFromSpherical(clampedSpherical);
-    if (shouldNotify) {
-      onCountryClick?.(country);
-    }
-  };
+      const currentDistance = camera.position.length();
+      const distance = THREE.MathUtils.clamp(currentDistance, minCameraDistance, maxCameraDistance);
+      const targetPosition = countryCenterVector(country, distance);
+      const clampedSpherical = new THREE.Spherical().setFromVector3(targetPosition);
+      clampedSpherical.phi = THREE.MathUtils.clamp(
+        clampedSpherical.phi,
+        polarAngleLimit,
+        Math.PI - polarAngleLimit
+      );
+      targetCameraPositionRef.current = new THREE.Vector3().setFromSpherical(clampedSpherical);
+      if (shouldNotify) {
+        onCountryClick?.(country);
+      }
+    },
+    [camera.position, maxCameraDistance, minCameraDistance, onCountryClick, polarAngleLimit]
+  );
 
   useEffect(() => {
     if (!focusedCountryId) {
@@ -204,7 +211,7 @@ function GlobeScene<TPayload>({
 
     const country = countries.find((item) => item.id === focusedCountryId);
     focusCountry(country ?? null, false);
-  }, [countries, focusedCountryId]);
+  }, [countries, focusCountry, focusedCountryId]);
 
   const handleGlobePointerDown = (event: ThreeEvent<PointerEvent>) => {
     pointerDownPositionRef.current = {
@@ -229,7 +236,10 @@ function GlobeScene<TPayload>({
   const handleCountryClick = (event: ThreeEvent<MouseEvent>) => {
     const pointerDownPosition = pointerDownPositionRef.current;
     const clickDistance = pointerDownPosition
-      ? Math.hypot(event.nativeEvent.clientX - pointerDownPosition.x, event.nativeEvent.clientY - pointerDownPosition.y)
+      ? Math.hypot(
+          event.nativeEvent.clientX - pointerDownPosition.x,
+          event.nativeEvent.clientY - pointerDownPosition.y
+        )
       : 0;
     const wasDragging = pointerDraggingRef.current || clickDistance > 4;
 
@@ -245,19 +255,31 @@ function GlobeScene<TPayload>({
     <>
       <ambientLight intensity={1.4} />
       <directionalLight position={[5, 4, 6]} intensity={1.8} color="#f7f3df" />
-      <Stars radius={58} depth={22} count={1400} factor={1.85} saturation={0.18} fade speed={0.05} />
+      <Stars
+        radius={58}
+        depth={22}
+        count={1400}
+        factor={1.85}
+        saturation={0.18}
+        fade
+        speed={0.05}
+      />
 
       <group ref={globeGroupRef}>
         <mesh
           onPointerDown={handleGlobePointerDown}
           onPointerMove={(event) => {
             updatePointerDragState(event);
-            updateHoveredCountry(event);
+            if (pointerDraggingRef.current) {
+              setCanvasCursor("grabbing");
+            } else {
+              updateHoveredCountry(event);
+            }
           }}
           onPointerOut={clearHoveredCountry}
           onClick={handleCountryClick}
         >
-          <sphereGeometry args={[GLOBE_RADIUS, 160, 160]} />
+          <sphereGeometry args={[GLOBE_RADIUS, 112, 112]} />
           {enableGlobeShading ? (
             <meshStandardMaterial
               color="#ffffff"
@@ -298,13 +320,12 @@ function GlobeScene<TPayload>({
         enablePan={false}
         minDistance={minCameraDistance}
         maxDistance={maxCameraDistance}
+        zoomSpeed={zoomSpeed}
         minPolarAngle={polarAngleLimit}
         maxPolarAngle={Math.PI - polarAngleLimit}
         dampingFactor={0.08}
         enableDamping
-        onStart={() => {
-          targetCameraPositionRef.current = null;
-        }}
+        onStart={stopProgrammaticCameraMove}
       />
     </>
   );
@@ -314,8 +335,8 @@ export function InteractiveGlobe<TPayload>(props: GlobeCoreProps<TPayload>) {
   return (
     <Canvas
       camera={{ position: [0, 0, 4.8], fov: 42 }}
-      dpr={[1, 2]}
-      gl={{ antialias: true, alpha: true, powerPreference: "high-performance" }}
+      dpr={[1, 1.5]}
+      gl={{ antialias: false, alpha: true, powerPreference: "high-performance" }}
     >
       <color attach="background" args={["#050709"]} />
       <GlobeScene {...props} />

@@ -22,7 +22,10 @@ interface BillboardLayerProps<TPayload> {
   billboardLayout?: GlobeBillboardLayoutMode;
   billboardPlacement?: GlobeBillboardPlacementMode;
   showBacksideBillboards?: boolean;
-  onItemHover?: (item: GlobeBillboardItem<TPayload> | null, event?: { clientX: number; clientY: number }) => void;
+  onItemHover?: (
+    item: GlobeBillboardItem<TPayload> | null,
+    event?: { clientX: number; clientY: number }
+  ) => void;
   onItemClick?: (item: GlobeBillboardItem<TPayload>) => void;
 }
 
@@ -37,7 +40,10 @@ interface BillboardItemProps<TPayload> {
   selected: boolean;
   billboardScale: number;
   showBacksideBillboards: boolean;
-  onItemHover?: (item: GlobeBillboardItem<TPayload> | null, event?: { clientX: number; clientY: number }) => void;
+  onItemHover?: (
+    item: GlobeBillboardItem<TPayload> | null,
+    event?: { clientX: number; clientY: number }
+  ) => void;
   onItemClick?: (item: GlobeBillboardItem<TPayload>) => void;
 }
 
@@ -49,7 +55,10 @@ interface PosterCardMeshProps<TPayload> {
   countryActive: boolean;
   selected: boolean;
   billboardScale: number;
-  onItemHover?: (item: GlobeBillboardItem<TPayload> | null, event?: { clientX: number; clientY: number }) => void;
+  onItemHover?: (
+    item: GlobeBillboardItem<TPayload> | null,
+    event?: { clientX: number; clientY: number }
+  ) => void;
   onItemClick?: (item: GlobeBillboardItem<TPayload>) => void;
 }
 
@@ -83,6 +92,13 @@ interface PositionedBillboard<TPayload> {
   stackIndex: number;
 }
 
+const MIN_COUNTRY_POSTER_SCALE = 0.62;
+const MAX_COUNTRY_POSTER_SCALE = 1.28;
+const TARGET_AREA_PER_MOVIE = 5.8;
+const BASE_POSTER_WORLD_HEIGHT = 0.15;
+const HIDE_EDGE_FACING_SCORE = 0.2;
+const SHOW_EDGE_FACING_SCORE = 0.28;
+
 function fallbackColor(id: string) {
   const hue = Array.from(id).reduce((sum, character) => sum + character.charCodeAt(0), 0) % 360;
   return `hsl(${hue} 72% 58%)`;
@@ -90,10 +106,10 @@ function fallbackColor(id: string) {
 
 function configurePosterTexture(texture: THREE.Texture, gl: THREE.WebGLRenderer) {
   texture.colorSpace = THREE.SRGBColorSpace;
-  texture.anisotropy = Math.min(8, gl.capabilities.getMaxAnisotropy());
-  texture.minFilter = THREE.LinearMipmapLinearFilter;
+  texture.anisotropy = Math.min(4, gl.capabilities.getMaxAnisotropy());
+  texture.minFilter = THREE.LinearFilter;
   texture.magFilter = THREE.LinearFilter;
-  texture.generateMipmaps = true;
+  texture.generateMipmaps = false;
   texture.needsUpdate = true;
 }
 
@@ -131,7 +147,10 @@ function pointerClientPosition(event: ThreeEvent<PointerEvent | MouseEvent>) {
 }
 
 function stableHash(value: string) {
-  return Array.from(value).reduce((hash, character) => (hash * 31 + character.charCodeAt(0)) >>> 0, 7);
+  return Array.from(value).reduce(
+    (hash, character) => (hash * 31 + character.charCodeAt(0)) >>> 0,
+    7
+  );
 }
 
 function clamp(value: number, min: number, max: number) {
@@ -160,7 +179,9 @@ function unwrapLongitude(lon: number, referenceLon: number) {
 function makeLayoutRings(country: CountryFeature, reference: { lat: number; lon: number }) {
   const rings = country.polygons
     .filter((ring) => ring.length > 3)
-    .map((ring) => ring.map(([lon, lat]) => [unwrapLongitude(lon, reference.lon), lat] as [number, number]))
+    .map((ring) =>
+      ring.map(([lon, lat]) => [unwrapLongitude(lon, reference.lon), lat] as [number, number])
+    )
     .map((ring) => ({
       ring,
       area: Math.abs(ringArea(ring)),
@@ -172,7 +193,9 @@ function makeLayoutRings(country: CountryFeature, reference: { lat: number; lon:
   const largestArea = Math.max(...rings.map(({ area }) => area), 0);
   const minMeaningfulArea = largestArea * 0.004;
   const meaningfulRings = rings.filter(({ area }) => area >= minMeaningfulArea);
-  const containingRings = meaningfulRings.filter(({ ring }) => pointInLayoutRing(reference.lon, reference.lat, ring));
+  const containingRings = meaningfulRings.filter(({ ring }) =>
+    pointInLayoutRing(reference.lon, reference.lat, ring)
+  );
   const anchorRing =
     [...containingRings].sort((first, second) => second.area - first.area)[0] ??
     [...meaningfulRings].sort(
@@ -189,7 +212,10 @@ function makeLayoutRings(country: CountryFeature, reference: { lat: number; lon:
   const nearbyLimit = clamp(anchorDiagonal * 0.72 + 2.2, 4.8, 18);
 
   return meaningfulRings
-    .filter((record) => record === anchorRing || ringBelongsToLayoutCluster(record, anchorRing, nearbyLimit))
+    .filter(
+      (record) =>
+        record === anchorRing || ringBelongsToLayoutCluster(record, anchorRing, nearbyLimit)
+    )
     .sort((first, second) => second.area - first.area)
     .map(({ ring }) => ring);
 }
@@ -221,6 +247,27 @@ function ringCenter(ring: LayoutRing) {
   };
 }
 
+function approximateLayoutArea(rings: LayoutRing[]) {
+  return rings.reduce((sum, ring) => {
+    const center = ringCenter(ring);
+    const latitudeCorrection = Math.max(0.18, Math.cos(THREE.MathUtils.degToRad(center.lat)));
+    return sum + Math.abs(ringArea(ring)) * latitudeCorrection;
+  }, 0);
+}
+
+function posterScaleForCountry(count: number, layoutArea: number | null) {
+  const countPressure = clamp(1.08 - Math.log10(Math.max(count, 1)) * 0.13, 0.78, 1.08);
+
+  if (!layoutArea || layoutArea <= 0) {
+    return clamp(countPressure, MIN_COUNTRY_POSTER_SCALE, MAX_COUNTRY_POSTER_SCALE);
+  }
+
+  const areaPerMovie = layoutArea / Math.max(count, 1);
+  const areaFactor = clamp(Math.pow(areaPerMovie / TARGET_AREA_PER_MOVIE, 0.16), 0.78, 1.34);
+
+  return clamp(countPressure * areaFactor, MIN_COUNTRY_POSTER_SCALE, MAX_COUNTRY_POSTER_SCALE);
+}
+
 function boundsForRings(rings: LayoutRing[]) {
   return rings.reduce(
     (bounds, ring) => {
@@ -250,10 +297,16 @@ function boundsCenter(bounds: ReturnType<typeof boundsForRings>) {
 }
 
 function boundsDiagonal(bounds: ReturnType<typeof boundsForRings>) {
-  return distanceDegrees({ lat: bounds.minLat, lon: bounds.minLon }, { lat: bounds.maxLat, lon: bounds.maxLon });
+  return distanceDegrees(
+    { lat: bounds.minLat, lon: bounds.minLon },
+    { lat: bounds.maxLat, lon: bounds.maxLon }
+  );
 }
 
-function distanceDegrees(first: { lat: number; lon: number }, second: { lat: number; lon: number }) {
+function distanceDegrees(
+  first: { lat: number; lon: number },
+  second: { lat: number; lon: number }
+) {
   const meanLat = THREE.MathUtils.degToRad((first.lat + second.lat) / 2);
   const eastWest = (first.lon - second.lon) * Math.max(0.18, Math.cos(meanLat));
   const northSouth = first.lat - second.lat;
@@ -268,7 +321,8 @@ function pointInLayoutRing(lon: number, lat: number, ring: LayoutRing) {
     const [previousLon, previousLat] = ring[previous];
     const intersects =
       currentLat > lat !== previousLat > lat &&
-      lon < ((previousLon - currentLon) * (lat - currentLat)) / (previousLat - currentLat) + currentLon;
+      lon <
+        ((previousLon - currentLon) * (lat - currentLat)) / (previousLat - currentLat) + currentLon;
 
     if (intersects) {
       inside = !inside;
@@ -278,9 +332,16 @@ function pointInLayoutRing(lon: number, lat: number, ring: LayoutRing) {
   return inside;
 }
 
-function ringBelongsToLayoutCluster(record: LayoutRingRecord, anchorRing: LayoutRingRecord, nearbyLimit: number) {
+function ringBelongsToLayoutCluster(
+  record: LayoutRingRecord,
+  anchorRing: LayoutRingRecord,
+  nearbyLimit: number
+) {
   const centerDistance = distanceDegrees(record.center, anchorRing.center);
-  const boundsDistance = distanceDegrees(boundsCenter(record.bounds), boundsCenter(anchorRing.bounds));
+  const boundsDistance = distanceDegrees(
+    boundsCenter(record.bounds),
+    boundsCenter(anchorRing.bounds)
+  );
   return Math.min(centerDistance, boundsDistance) <= nearbyLimit;
 }
 
@@ -292,9 +353,10 @@ function spansForLat(rings: LayoutRing[], lat: number) {
       const [currentLon, currentLat] = ring[current];
       const [previousLon, previousLat] = ring[previous];
 
-      if ((currentLat > lat) !== (previousLat > lat)) {
+      if (currentLat > lat !== previousLat > lat) {
         const lon =
-          currentLon + ((previousLon - currentLon) * (lat - currentLat)) / (previousLat - currentLat);
+          currentLon +
+          ((previousLon - currentLon) * (lat - currentLat)) / (previousLat - currentLat);
         intersections.push(lon);
       }
     }
@@ -341,14 +403,30 @@ function totalSpanWidth(spans: LayoutSpan[]) {
   return spans.reduce((sum, span) => sum + span.width, 0);
 }
 
-function estimateRowCount(count: number, bounds: ReturnType<typeof boundsForRings>, layoutMode: GlobeBillboardLayoutMode) {
+function estimateRowCount(
+  count: number,
+  bounds: ReturnType<typeof boundsForRings>,
+  layoutMode: GlobeBillboardLayoutMode
+) {
   const meanLat = (bounds.minLat + bounds.maxLat) / 2;
   const latSpan = Math.max(0.4, bounds.maxLat - bounds.minLat);
-  const lonSpan = Math.max(0.4, (bounds.maxLon - bounds.minLon) * Math.cos(THREE.MathUtils.degToRad(meanLat)));
+  const lonSpan = Math.max(
+    0.4,
+    (bounds.maxLon - bounds.minLon) * Math.cos(THREE.MathUtils.degToRad(meanLat))
+  );
   const aspect = clamp(lonSpan / latSpan, 0.34, 3.6);
   const rowBias = layoutMode === "flat" ? 1.26 : 1.08;
   const densityRows = Math.ceil(Math.sqrt(count) * (layoutMode === "flat" ? 1.28 : 1.08));
-  const rows = Math.max(Math.ceil(Math.sqrt(count / aspect) * rowBias), densityRows);
+  const maxItemsPerRow = layoutMode === "flat" ? 9 : 11;
+  const crowdingRows = Math.ceil(count / maxItemsPerRow);
+  const heavyCountryRows =
+    count > 36 ? Math.ceil(count / (layoutMode === "flat" ? 7 : 9)) : crowdingRows;
+  const rows = Math.max(
+    Math.ceil(Math.sqrt(count / aspect) * rowBias),
+    densityRows,
+    crowdingRows,
+    heavyCountryRows
+  );
 
   return clamp(rows, 1, count);
 }
@@ -382,7 +460,8 @@ function makeLayoutRows(rings: LayoutRing[], count: number, layoutMode: GlobeBil
       const spans = spansForLat(rings, candidateLat);
 
       if (spans.length > 0) {
-        const planarWidth = totalSpanWidth(spans) * Math.max(0.22, Math.cos(THREE.MathUtils.degToRad(candidateLat)));
+        const planarWidth =
+          totalSpanWidth(spans) * Math.max(0.22, Math.cos(THREE.MathUtils.degToRad(candidateLat)));
         return { rowIndex, lat: candidateLat, spans, width: planarWidth };
       }
     }
@@ -396,6 +475,7 @@ function allocateItemsToRows(rows: LayoutRow[], count: number) {
     return [];
   }
 
+  const maxItemsPerRow = count > 72 ? 7 : count > 36 ? 8 : 10;
   const allocations = rows.map(() => 0);
   const guaranteedRows = Math.min(rows.length, count);
 
@@ -418,21 +498,43 @@ function allocateItemsToRows(rows: LayoutRow[], count: number) {
   const fractional = weightedRows.map((row) => {
     const exact = (proportionalSlots * row.weight) / totalWeight;
     const whole = Math.floor(exact);
-    allocations[row.index] += whole;
-    return { index: row.index, remainder: exact - whole, whole };
+    const cappedWhole = Math.min(whole, maxItemsPerRow - allocations[row.index]);
+    allocations[row.index] += cappedWhole;
+    return { index: row.index, remainder: exact - cappedWhole, whole: cappedWhole };
   });
 
   remaining -= fractional.reduce((sum, row) => sum + row.whole, 0);
-  fractional.sort((first, second) => second.remainder - first.remainder);
+  while (remaining > 0) {
+    const availableRows = fractional
+      .filter((row) => allocations[row.index] < maxItemsPerRow)
+      .sort((first, second) => {
+        const widthDelta = rows[second.index].width - rows[first.index].width;
+        return second.remainder - first.remainder || widthDelta;
+      });
 
-  for (let index = 0; index < remaining; index += 1) {
-    allocations[fractional[index % fractional.length].index] += 1;
+    if (availableRows.length === 0) {
+      break;
+    }
+
+    for (const row of availableRows) {
+      if (remaining <= 0) {
+        break;
+      }
+
+      allocations[row.index] += 1;
+      remaining -= 1;
+    }
   }
 
   return allocations;
 }
 
-function pickLonInSpans(spans: LayoutSpan[], slotIndex: number, slotCount: number, stableId: string) {
+function pickLonInSpans(
+  spans: LayoutSpan[],
+  slotIndex: number,
+  slotCount: number,
+  stableId: string
+) {
   const totalWidth = totalSpanWidth(spans);
 
   if (totalWidth <= 0) {
@@ -441,7 +543,11 @@ function pickLonInSpans(spans: LayoutSpan[], slotIndex: number, slotCount: numbe
 
   const slotWidth = totalWidth / Math.max(slotCount, 1);
   const phase = ((stableHash(stableId) % 100) / 100 - 0.5) * slotWidth * 0.18;
-  let target = clamp((slotIndex + 0.5) * slotWidth + phase, slotWidth * 0.14, totalWidth - slotWidth * 0.14);
+  let target = clamp(
+    (slotIndex + 0.5) * slotWidth + phase,
+    slotWidth * 0.14,
+    totalWidth - slotWidth * 0.14
+  );
 
   for (const span of spans) {
     const spanPadding = Math.min(span.width * 0.18, slotWidth * 0.34);
@@ -480,10 +586,16 @@ function makeSpreadCandidates(
 
     spans.forEach((span, spanIndex) => {
       const meanLatScale = Math.max(0.24, Math.cos(THREE.MathUtils.degToRad(lat)));
-      const slots = clamp(Math.ceil(span.width * meanLatScale * latBands * 0.42), 1, Math.max(count, 2));
+      const slots = clamp(
+        Math.ceil(span.width * meanLatScale * latBands * 0.42),
+        1,
+        Math.max(count, 2)
+      );
 
       for (let slotIndex = 0; slotIndex < slots; slotIndex += 1) {
-        const phase = ((stableHash(`${stableSeed}-${bandIndex}-${spanIndex}-${slotIndex}`) % 100) / 100 - 0.5) * 0.18;
+        const phase =
+          ((stableHash(`${stableSeed}-${bandIndex}-${spanIndex}-${slotIndex}`) % 100) / 100 - 0.5) *
+          0.18;
         const ratio = clamp((slotIndex + 0.5 + phase) / slots, 0.08, 0.92);
         candidates.push({
           lat,
@@ -557,13 +669,17 @@ function selectSpreadPoints(
 
 function tangentBasis(lat: number, lon: number) {
   const normal = latLonToVector3(lat, lon, 1).normalize();
-  let east = latLonToVector3(lat, lon + 0.1, 1).sub(normal).normalize();
+  let east = latLonToVector3(lat, lon + 0.1, 1)
+    .sub(normal)
+    .normalize();
 
   if (east.lengthSq() < 0.0001) {
     east = new THREE.Vector3(1, 0, 0);
   }
 
-  let north = latLonToVector3(Math.min(lat + 0.1, 89.9), lon, 1).sub(normal).normalize();
+  let north = latLonToVector3(Math.min(lat + 0.1, 89.9), lon, 1)
+    .sub(normal)
+    .normalize();
 
   if (north.lengthSq() < 0.0001) {
     north = new THREE.Vector3(0, 1, 0);
@@ -616,9 +732,11 @@ function PosterCardMesh<TPayload>({
 }: PosterCardMeshProps<TPayload>) {
   const cardRef = useRef<THREE.Group>(null);
   const { gl } = useThree();
-  const [texture, setTexture] = useState<THREE.Texture>(() => makePosterPlaceholderTexture(item.id));
-  const worldPositionRef = useRef(new THREE.Vector3());
-  const raised = selected;
+  const [texture, setTexture] = useState<THREE.Texture>(() =>
+    makePosterPlaceholderTexture(item.id)
+  );
+  const [hovered, setHovered] = useState(false);
+  const raised = selected || hovered;
   const renderOrder = raised ? 1200 : stackIndex;
 
   useEffect(() => {
@@ -651,29 +769,21 @@ function PosterCardMesh<TPayload>({
 
   useEffect(() => () => texture.dispose(), [texture]);
 
-  useFrame(({ camera, size }) => {
+  useLayoutEffect(() => {
     if (!cardRef.current) {
       return;
     }
 
-    const worldPosition = worldPositionRef.current;
-    cardRef.current.getWorldPosition(worldPosition);
-    const cameraDistance = camera.position.distanceTo(worldPosition);
-    const perspectiveCamera = camera as THREE.PerspectiveCamera;
-    const baseHeightPixels = 52;
-    const cardBoost = (countryActive ? 1.12 : 1) * (raised ? 1.18 : 1);
-    const targetHeightPixels = baseHeightPixels * billboardScale * autoScale * cardBoost;
-    const worldHeight = perspectiveCamera.isPerspectiveCamera
-      ? (2 * Math.tan(THREE.MathUtils.degToRad(perspectiveCamera.fov) / 2) * cameraDistance * targetHeightPixels) /
-        size.height
-      : 0.12 * billboardScale * autoScale * cardBoost;
+    const cardBoost = (countryActive ? 1.12 : 1) * (selected ? 1.18 : hovered ? 1.24 : 1);
+    const worldHeight = BASE_POSTER_WORLD_HEIGHT * billboardScale * autoScale * cardBoost;
 
     cardRef.current.scale.set(worldHeight * (36 / 52), worldHeight, 1);
-    cardRef.current.position.z = raised ? 0.018 : 0;
-  });
+    cardRef.current.position.z = selected ? 0.052 : hovered ? 0.064 : 0.04;
+  }, [autoScale, billboardScale, countryActive, hovered, selected]);
 
   const handlePointerEnter = (event: ThreeEvent<PointerEvent>) => {
     event.stopPropagation();
+    setHovered(true);
     setCanvasCursor("pointer");
     onItemHover?.(item, pointerClientPosition(event));
   };
@@ -685,6 +795,7 @@ function PosterCardMesh<TPayload>({
 
   const handlePointerLeave = (event: ThreeEvent<PointerEvent>) => {
     event.stopPropagation();
+    setHovered(false);
     setCanvasCursor("grab");
     onItemHover?.(null);
   };
@@ -699,7 +810,7 @@ function PosterCardMesh<TPayload>({
       <mesh renderOrder={renderOrder * 2} scale={[1.06, 1.045, 1]} position={[0, 0, -0.003]}>
         <planeGeometry args={[1, 1]} />
         <meshBasicMaterial
-          color={selected ? "#f2b45d" : "#121719"}
+          color={selected || hovered ? "#f2b45d" : "#121719"}
           depthTest={false}
           depthWrite={false}
           toneMapped={false}
@@ -735,13 +846,24 @@ function layoutItemsForCountry<TPayload>(
 ) {
   const sortedItems = [...countryItems].sort((first, second) => first.id.localeCompare(second.id));
   const count = sortedItems.length;
-  const autoScale = Math.max(0.7, Math.min(1, 1.04 - Math.max(0, count - 10) * 0.018));
+  const rings = country ? makeLayoutRings(country, coordinate) : [];
+  const autoScale = posterScaleForCountry(
+    count,
+    rings.length > 0 ? approximateLayoutArea(rings) : null
+  );
 
-  if (country) {
+  if (country && rings.length > 0) {
     const countryLayout =
       placementMode === "spread"
-        ? layoutItemsSpreadAcrossCountry(sortedItems, coordinate, layoutMode, country, autoScale)
-        : layoutItemsAcrossCountry(sortedItems, coordinate, layoutMode, country, autoScale);
+        ? layoutItemsSpreadAcrossCountry(
+            sortedItems,
+            coordinate,
+            layoutMode,
+            country,
+            rings,
+            autoScale
+          )
+        : layoutItemsAcrossCountry(sortedItems, coordinate, layoutMode, country, rings, autoScale);
 
     if (countryLayout.length > 0) {
       return countryLayout;
@@ -762,7 +884,7 @@ function layoutItemsForCountry<TPayload>(
     const centerColumn = (rowItemCount - 1) / 2;
     const centerRow = (rows - 1) / 2;
     const stagger = (row % 2 === 0 ? -0.16 : 0.16) * columnSpacing;
-    const jitter = (((stableHash(item.id) % 101) / 100 - 0.5) * columnSpacing * 0.18);
+    const jitter = ((stableHash(item.id) % 101) / 100 - 0.5) * columnSpacing * 0.18;
     const eastOffset = (column - centerColumn) * columnSpacing + stagger + jitter;
     const northOffset = (centerRow - row) * rowSpacing;
     const layout = positionOnGlobe(coordinate, eastOffset, northOffset, radius);
@@ -786,9 +908,9 @@ function layoutItemsSpreadAcrossCountry<TPayload>(
   coordinate: { lat: number; lon: number },
   layoutMode: GlobeBillboardLayoutMode,
   country: CountryFeature,
+  rings: LayoutRing[],
   autoScale: number
 ): Array<PositionedBillboard<TPayload>> {
-  const rings = makeLayoutRings(country, coordinate);
   const candidates = makeSpreadCandidates(rings, sortedItems.length, country.id);
   const points = selectSpreadPoints(candidates, sortedItems.length, coordinate).sort(
     (first, second) => second.lat - first.lat || first.lon - second.lon
@@ -821,9 +943,9 @@ function layoutItemsAcrossCountry<TPayload>(
   coordinate: { lat: number; lon: number },
   layoutMode: GlobeBillboardLayoutMode,
   country: CountryFeature,
+  rings: LayoutRing[],
   autoScale: number
 ): Array<PositionedBillboard<TPayload>> {
-  const rings = makeLayoutRings(country, coordinate);
   const rows = makeLayoutRows(rings, sortedItems.length, layoutMode);
 
   if (rows.length === 0) {
@@ -841,7 +963,9 @@ function layoutItemsAcrossCountry<TPayload>(
       const item = sortedItems[itemIndex];
       itemIndex += 1;
 
-      const lon = wrapLongitude(pickLonInSpans(row.spans, slotIndex, rowItemCount, `${country.id}-${item.id}`));
+      const lon = wrapLongitude(
+        pickLonInSpans(row.spans, slotIndex, rowItemCount, `${country.id}-${item.id}`)
+      );
       const lat = row.lat;
       const layout = positionOnGlobe({ lat, lon }, 0, 0, radius);
       const stackIndex = 24 + row.rowIndex * 8 + Math.round((90 - lat) * 0.32) + slotIndex;
@@ -908,15 +1032,15 @@ function BillboardItem<TPayload>({
     const itemDirection = worldPosition.normalize();
     const facingScore = itemDirection.dot(cameraDirection);
 
-    if (frontFacing && facingScore < -0.08) {
+    if (frontFacing && facingScore < HIDE_EDGE_FACING_SCORE) {
       setFrontFacing(false);
-    } else if (!frontFacing && facingScore > 0.08) {
+    } else if (!frontFacing && facingScore > SHOW_EDGE_FACING_SCORE) {
       setFrontFacing(true);
     }
   });
 
   const shouldShowContent = showBacksideBillboards || frontFacing;
-  const card = shouldShowContent && item.imageUrl ? (
+  const card = item.imageUrl ? (
     <PosterCardMesh
       item={item}
       imageUrl={item.imageUrl}
@@ -932,11 +1056,25 @@ function BillboardItem<TPayload>({
 
   return (
     <group ref={groupRef}>
-      {layoutMode === "flat" ? <Billboard follow lockX={false} lockY={false} lockZ={false}>{card}</Billboard> : card}
+      {shouldShowContent && layoutMode === "flat" ? (
+        <Billboard follow lockX={false} lockY={false} lockZ={false}>
+          {card}
+        </Billboard>
+      ) : shouldShowContent ? (
+        card
+      ) : null}
       {shouldShowContent && !item.imageUrl ? (
-        <mesh onClick={handleSelect} onPointerDown={handleSelect} scale={selected ? [0.32, 0.44, 1] : [0.23, 0.32, 1]}>
+        <mesh
+          onClick={handleSelect}
+          onPointerDown={handleSelect}
+          scale={selected ? [0.32, 0.44, 1] : [0.23, 0.32, 1]}
+        >
           <planeGeometry />
-          <meshBasicMaterial color={fallbackColor(item.id)} side={THREE.DoubleSide} />
+          <meshBasicMaterial
+            color={fallbackColor(item.id)}
+            depthTest={false}
+            side={THREE.DoubleSide}
+          />
         </mesh>
       ) : null}
     </group>
@@ -991,7 +1129,6 @@ export function BillboardLayer<TPayload>({
       );
     });
   }, [billboardLayout, billboardPlacement, countries, countryCoordinates, items]);
-
   return (
     <>
       {positionedItems.map(({ item, position, quaternion, autoScale, stackIndex }) => {

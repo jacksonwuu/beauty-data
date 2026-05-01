@@ -23,7 +23,9 @@ function toCountryFeature(geoFeature: GeoFeature, index: number): CountryFeature
   const coordinates = geoFeature.geometry.coordinates;
   const polygons =
     geoFeature.geometry.type === "Polygon"
-      ? (coordinates as number[][][]).map((ring) => ring.map(([lon, lat]) => [lon, lat] as [number, number]))
+      ? (coordinates as number[][][]).map((ring) =>
+          ring.map(([lon, lat]) => [lon, lat] as [number, number])
+        )
       : (coordinates as number[][][][]).flatMap((polygon) =>
           polygon.map((ring) => ring.map(([lon, lat]) => [lon, lat] as [number, number]))
         );

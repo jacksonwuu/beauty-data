@@ -33,7 +33,11 @@ function unwrapRing(ring: Array<[number, number]>) {
   });
 }
 
-function traceRing(context: CanvasRenderingContext2D, ring: Array<[number, number]>, offsetX: number) {
+function traceRing(
+  context: CanvasRenderingContext2D,
+  ring: Array<[number, number]>,
+  offsetX: number
+) {
   context.beginPath();
   ring.forEach((point, index) => {
     const { x, y } = pointToTexture(point, offsetX);
@@ -47,7 +51,11 @@ function traceRing(context: CanvasRenderingContext2D, ring: Array<[number, numbe
   context.closePath();
 }
 
-function drawRing(context: CanvasRenderingContext2D, ring: Array<[number, number]>, offsetX: number) {
+function drawRing(
+  context: CanvasRenderingContext2D,
+  ring: Array<[number, number]>,
+  offsetX: number
+) {
   traceRing(context, ring, offsetX);
   context.fill();
 }

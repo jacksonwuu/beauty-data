@@ -27,12 +27,16 @@ export interface GlobeCoreProps<TPayload = unknown> {
   billboardPlacement?: GlobeBillboardPlacementMode;
   minCameraDistance?: number;
   maxCameraDistance?: number;
+  zoomSpeed?: number;
   enableGlobeShading?: boolean;
   enableAtmosphere?: boolean;
   showBacksideBillboards?: boolean;
   polarAngleLimit?: number;
   onCountryHover?: (country: CountryFeature | null) => void;
   onCountryClick?: (country: CountryFeature | null) => void;
-  onItemHover?: (item: GlobeBillboardItem<TPayload> | null, event?: { clientX: number; clientY: number }) => void;
+  onItemHover?: (
+    item: GlobeBillboardItem<TPayload> | null,
+    event?: { clientX: number; clientY: number }
+  ) => void;
   onItemClick?: (item: GlobeBillboardItem<TPayload>) => void;
 }

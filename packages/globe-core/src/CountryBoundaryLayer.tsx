@@ -13,13 +13,24 @@ interface CountryBoundaryLayerProps {
 
 const FOCUS_PULSE_DURATION = 2.4;
 
-export function CountryBoundaryLayer({ countries, hoveredCountryId, focusedCountryId }: CountryBoundaryLayerProps) {
+export function CountryBoundaryLayer({
+  countries,
+  hoveredCountryId,
+  focusedCountryId
+}: CountryBoundaryLayerProps) {
   const focusMaterialRef = useRef<THREE.LineBasicMaterial>(null);
   const focusPulseStartRef = useRef<number | null>(null);
-  const [focusPulseActive, setFocusPulseActive] = useState(false);
+  const [completedFocusPulseCountryId, setCompletedFocusPulseCountryId] = useState<string | null>(
+    null
+  );
+  const focusPulseActive = Boolean(
+    focusedCountryId && completedFocusPulseCountryId !== focusedCountryId
+  );
 
   const allBoundaryGeometry = useMemo(() => {
-    const positions = countries.flatMap((country) => Array.from(makeCountryLinePoints(country, 2.006)));
+    const positions = countries.flatMap((country) =>
+      Array.from(makeCountryLinePoints(country, 2.006))
+    );
     const geometry = new THREE.BufferGeometry();
     geometry.setAttribute("position", new THREE.BufferAttribute(new Float32Array(positions), 3));
     return geometry;
@@ -43,18 +54,14 @@ export function CountryBoundaryLayer({ countries, hoveredCountryId, focusedCount
     }
 
     const geometry = new THREE.BufferGeometry();
-    geometry.setAttribute("position", new THREE.BufferAttribute(makeCountryLinePoints(country, 2.012), 3));
+    geometry.setAttribute(
+      "position",
+      new THREE.BufferAttribute(makeCountryLinePoints(country, 2.012), 3)
+    );
     return geometry;
   }, [countries, focusedCountryId]);
 
   useEffect(() => {
-    if (!focusedCountryId) {
-      setFocusPulseActive(false);
-      focusPulseStartRef.current = null;
-      return;
-    }
-
-    setFocusPulseActive(true);
     focusPulseStartRef.current = null;
   }, [focusedCountryId]);
 
@@ -73,7 +80,7 @@ export function CountryBoundaryLayer({ countries, hoveredCountryId, focusedCount
     focusMaterialRef.current.opacity = (1 - progress) * (0.34 + pulse * 0.62);
 
     if (progress >= 1) {
-      setFocusPulseActive(false);
+      setCompletedFocusPulseCountryId(focusedCountryId ?? null);
       focusPulseStartRef.current = null;
     }
   });
@@ -92,7 +99,7 @@ export function CountryBoundaryLayer({ countries, hoveredCountryId, focusedCount
       </lineSegments>
       {hoverTexture ? (
         <mesh scale={1.0015}>
-          <sphereGeometry args={[2, 96, 96]} />
+          <sphereGeometry args={[2, 72, 72]} />
           <meshBasicMaterial
             map={hoverTexture}
             transparent
@@ -104,7 +111,13 @@ export function CountryBoundaryLayer({ countries, hoveredCountryId, focusedCount
       ) : null}
       {focusedGeometry && focusPulseActive ? (
         <lineSegments geometry={focusedGeometry}>
-          <lineBasicMaterial ref={focusMaterialRef} color="#ffe58f" transparent opacity={0.96} linewidth={2} />
+          <lineBasicMaterial
+            ref={focusMaterialRef}
+            color="#ffe58f"
+            transparent
+            opacity={0.96}
+            linewidth={2}
+          />
         </lineSegments>
       ) : null}
     </>

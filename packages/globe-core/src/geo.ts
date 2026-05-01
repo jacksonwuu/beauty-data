@@ -29,7 +29,8 @@ function pointInRing(lon: number, lat: number, ring: Array<[number, number]>): b
     const [previousLon, previousLat] = ring[previous];
     const intersects =
       currentLat > lat !== previousLat > lat &&
-      lon < ((previousLon - currentLon) * (lat - currentLat)) / (previousLat - currentLat) + currentLon;
+      lon <
+        ((previousLon - currentLon) * (lat - currentLat)) / (previousLat - currentLat) + currentLon;
 
     if (intersects) {
       inside = !inside;
@@ -69,7 +70,10 @@ export function countryCenterVector(country: CountryFeature, radius = GLOBE_RADI
   return center.normalize().multiplyScalar(radius);
 }
 
-export function makeCountryLinePoints(country: CountryFeature, radius = GLOBE_RADIUS + 0.012): Float32Array {
+export function makeCountryLinePoints(
+  country: CountryFeature,
+  radius = GLOBE_RADIUS + 0.012
+): Float32Array {
   const points: number[] = [];
 
   country.polygons.forEach((ring) => {
@@ -83,7 +87,10 @@ export function makeCountryLinePoints(country: CountryFeature, radius = GLOBE_RA
   return new Float32Array(points);
 }
 
-export function makeCountryFillPoints(country: CountryFeature, radius = GLOBE_RADIUS + 0.006): Float32Array {
+export function makeCountryFillPoints(
+  country: CountryFeature,
+  radius = GLOBE_RADIUS + 0.006
+): Float32Array {
   const points: number[] = [];
 
   country.polygons.forEach((ring) => {
@@ -96,7 +103,17 @@ export function makeCountryFillPoints(country: CountryFeature, radius = GLOBE_RA
     for (let index = 1; index < ring.length - 2; index += 1) {
       const current = latLonToVector3(ring[index][1], ring[index][0], radius);
       const next = latLonToVector3(ring[index + 1][1], ring[index + 1][0], radius);
-      points.push(anchor.x, anchor.y, anchor.z, current.x, current.y, current.z, next.x, next.y, next.z);
+      points.push(
+        anchor.x,
+        anchor.y,
+        anchor.z,
+        current.x,
+        current.y,
+        current.z,
+        next.x,
+        next.y,
+        next.z
+      );
     }
   });
 

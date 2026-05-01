@@ -1,11 +1,13 @@
 import { mkdir, readFile, writeFile } from "node:fs/promises";
-import { existsSync } from "node:fs";
+import { createReadStream, existsSync } from "node:fs";
 import path from "node:path";
+import readline from "node:readline";
 import { fileURLToPath } from "node:url";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const appRoot = path.resolve(__dirname, "..");
 const moviesPath = path.join(appRoot, "src/data/movies.ts");
+const csvPath = path.join(appRoot, "data/movies.csv");
 const manifestPath = path.join(appRoot, "src/data/posterManifest.json");
 const outputDir = path.join(appRoot, "public/posters");
 const concurrency = 8;
@@ -23,9 +25,113 @@ function extractRawMovies(source) {
   return JSON.parse(source.slice(start + startMarker.length, end));
 }
 
+function parseCsvLine(line) {
+  const values = [];
+  let current = "";
+  let inQuotes = false;
+
+  for (let index = 0; index < line.length; index += 1) {
+    const char = line[index];
+    const nextChar = line[index + 1];
+
+    if (char === '"' && inQuotes && nextChar === '"') {
+      current += '"';
+      index += 1;
+      continue;
+    }
+
+    if (char === '"') {
+      inQuotes = !inQuotes;
+      continue;
+    }
+
+    if (char === "," && !inQuotes) {
+      values.push(current);
+      current = "";
+      continue;
+    }
+
+    current += char;
+  }
+
+  values.push(current);
+  return values;
+}
+
+async function loadImdbIdsBySourceId(movies) {
+  if (!existsSync(csvPath)) {
+    return new Map();
+  }
+
+  const pendingSourceIds = new Set(movies.map((movie) => movie.sourceId));
+  const imdbIdsBySourceId = new Map();
+  const lines = readline.createInterface({
+    input: createReadStream(csvPath, { encoding: "utf8" }),
+    crlfDelay: Infinity
+  });
+
+  for await (const line of lines) {
+    if (pendingSourceIds.size === 0) {
+      lines.close();
+      break;
+    }
+
+    const normalizedLine = line.replace(/^\uFEFF/, "");
+
+    if (!normalizedLine || normalizedLine.startsWith('"MOVIE_ID"')) {
+      continue;
+    }
+
+    const columns = parseCsvLine(normalizedLine);
+    const sourceId = columns[0];
+    const imdbId = columns[9];
+
+    if (pendingSourceIds.has(sourceId)) {
+      pendingSourceIds.delete(sourceId);
+
+      if (imdbId?.startsWith("tt")) {
+        imdbIdsBySourceId.set(sourceId, imdbId);
+      }
+    }
+  }
+
+  return imdbIdsBySourceId;
+}
+
 function proxiedPosterUrl(url) {
   const strippedProtocol = url.replace(/^https?:\/\//, "");
   return `https://images.weserv.nl/?url=${strippedProtocol}&w=320&h=460&fit=cover`;
+}
+
+function resizedImdbImageUrl(url) {
+  return url.replace(/\._V1_.*\.jpg$/i, "._V1_QL75_UX320_.jpg");
+}
+
+async function fetchImdbPosterUrls(imdbId) {
+  if (!imdbId) {
+    return [];
+  }
+
+  try {
+    const response = await fetch(`https://v3.sg.media-imdb.com/suggestion/t/${imdbId}.json`, {
+      headers: {
+        "User-Agent":
+          "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124 Safari/537.36"
+      }
+    });
+    const payload = await response.json();
+    const match = payload.d?.find((item) => item.id === imdbId) ?? payload.d?.[0];
+    const imageUrl = match?.i?.imageUrl;
+
+    if (!imageUrl) {
+      return [];
+    }
+
+    const resizedUrl = resizedImdbImageUrl(imageUrl);
+    return resizedUrl === imageUrl ? [imageUrl] : [resizedUrl, imageUrl];
+  } catch {
+    return [];
+  }
 }
 
 function extensionForContentType(contentType) {
@@ -68,9 +174,13 @@ async function writePlaceholder(movie) {
   return `/posters/${fileName}`;
 }
 
-async function downloadImage(movie) {
+async function downloadImage(movie, imdbId) {
   const id = movie.id;
-  const candidates = [movie.coverUrl, proxiedPosterUrl(movie.coverUrl)];
+  const candidates = [
+    movie.coverUrl,
+    movie.coverUrl ? proxiedPosterUrl(movie.coverUrl) : "",
+    ...(await fetchImdbPosterUrls(movie.imdbId || imdbId))
+  ].filter((url) => typeof url === "string" && url.startsWith("http"));
 
   for (const url of candidates) {
     try {
@@ -114,27 +224,49 @@ async function main() {
   const source = await readFile(moviesPath, "utf8");
   const movies = extractRawMovies(source);
   const manifest = {};
+  const imdbIdsBySourceId = await loadImdbIdsBySourceId(movies);
   let completed = 0;
   let success = 0;
+  let downloaded = 0;
+  let placeholders = 0;
 
   async function worker(workerIndex) {
     for (let index = workerIndex; index < movies.length; index += concurrency) {
       const movie = movies[index];
-      const existingExtensions = ["jpg", "png", "webp", "svg"];
+      const existingExtensions = ["jpg", "png", "webp"];
       const existing = existingExtensions
         .map((extension) => `/posters/${movie.id}.${extension}`)
         .find((posterPath) => existsSync(path.join(appRoot, "public", posterPath)));
 
-      const posterPath = existing ?? (await downloadImage(movie)) ?? (await writePlaceholder(movie));
+      const existingPlaceholder = `/posters/${movie.id}.svg`;
+      const downloadedPath = existing
+        ? null
+        : await downloadImage(movie, imdbIdsBySourceId.get(movie.sourceId));
+      const posterPath =
+        existing ??
+        downloadedPath ??
+        (existsSync(path.join(appRoot, "public", existingPlaceholder))
+          ? existingPlaceholder
+          : await writePlaceholder(movie));
       completed += 1;
 
       if (posterPath) {
         manifest[movie.id] = posterPath;
         success += 1;
+
+        if (downloadedPath) {
+          downloaded += 1;
+        }
+
+        if (posterPath.endsWith(".svg")) {
+          placeholders += 1;
+        }
       }
 
       if (completed % 25 === 0 || completed === movies.length) {
-        console.log(`[posters] ${completed}/${movies.length} processed, ${success} saved`);
+        console.log(
+          `[posters] ${completed}/${movies.length} processed, ${success} saved, ${downloaded} downloaded, ${placeholders} placeholders`
+        );
       }
     }
   }
