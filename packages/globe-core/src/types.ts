@@ -12,7 +12,6 @@ export interface GlobeBillboardItem<TPayload = unknown> {
   countryCode: string;
   year?: number;
   imageUrl?: string;
-  positionOffset?: [number, number, number];
   payload: TPayload;
 }
 
@@ -26,7 +25,6 @@ export interface GlobeCoreProps<TPayload = unknown> {
   billboardLayout?: GlobeBillboardLayoutMode;
   minCameraDistance?: number;
   maxCameraDistance?: number;
-  focusedCameraDistance?: number;
   enableGlobeShading?: boolean;
   enableAtmosphere?: boolean;
   showBacksideBillboards?: boolean;

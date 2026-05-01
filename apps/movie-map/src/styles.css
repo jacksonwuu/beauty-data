@@ -192,7 +192,7 @@ select {
   text-align: center;
 }
 
-.country-poster-panel {
+.movie-panel {
   position: absolute;
   z-index: 205;
   top: 92px;
@@ -209,18 +209,18 @@ select {
   box-shadow: 0 24px 56px rgba(0, 0, 0, 0.42);
 }
 
-.country-poster-panel-header {
+.movie-panel-header {
   display: flex;
   align-items: start;
   justify-content: space-between;
   gap: 12px;
 }
 
-.country-poster-panel-header .detail-kicker {
+.movie-panel-header .detail-kicker {
   margin-bottom: 5px;
 }
 
-.country-poster-panel-header h2 {
+.movie-panel-header h2 {
   margin: 0;
   color: #fff8df;
   font-family: Georgia, "Times New Roman", serif;
@@ -229,13 +229,13 @@ select {
   letter-spacing: 0;
 }
 
-.country-panel-close {
+.movie-panel-close {
   flex: 0 0 auto;
   width: 32px;
   height: 32px;
 }
 
-.country-poster-grid {
+.movie-grid {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
   align-content: start;
@@ -247,7 +247,7 @@ select {
   overflow-x: hidden;
 }
 
-.country-poster-card {
+.movie-grid-card {
   position: relative;
   display: block;
   width: 100%;
@@ -264,12 +264,12 @@ select {
   line-height: 0;
 }
 
-.country-poster-card:hover,
-.country-poster-card--active {
+.movie-grid-card:hover,
+.movie-grid-card--active {
   box-shadow: inset 0 0 0 3px rgba(246, 196, 83, 0.9);
 }
 
-.country-poster-card img {
+.movie-grid-card img {
   display: block;
   width: 100%;
   height: 100%;
@@ -277,7 +277,7 @@ select {
   cursor: pointer;
 }
 
-.country-poster-card span {
+.movie-grid-card span {
   position: absolute;
   right: 4px;
   bottom: 4px;
@@ -548,67 +548,6 @@ select {
   line-height: 1.6;
 }
 
-.globe-poster-button {
-  position: relative;
-  display: block;
-  width: 36px;
-  height: 52px;
-  padding: 0;
-  border: 1px solid rgba(255, 248, 223, 0.48);
-  border-radius: 0;
-  background: #050709;
-  box-shadow: 0 6px 14px rgba(0, 0, 0, 0.34);
-  cursor: pointer;
-  overflow: hidden;
-  pointer-events: auto;
-  transform: scale(calc(var(--poster-scale, 1) * var(--poster-auto-scale, 1) * var(--country-poster-boost, 1)));
-  transform-origin: center;
-}
-
-.globe-poster-html--raised {
-  z-index: 180 !important;
-}
-
-.globe-poster-button::after {
-  display: none;
-}
-
-.globe-poster-button:hover,
-.globe-poster-button--hovered {
-  border-color: rgba(255, 248, 223, 0.95);
-  transform: scale(calc(var(--poster-scale, 1) * var(--poster-auto-scale, 1) * var(--country-poster-boost, 1) * 1.16));
-}
-
-.globe-poster-button--standing {
-  box-shadow: 4px 8px 14px rgba(0, 0, 0, 0.36);
-  overflow: hidden;
-  transform-style: preserve-3d;
-}
-
-.globe-poster-button--standing::before {
-  display: none;
-}
-
-.globe-poster-button:hover::after,
-.globe-poster-button--hovered::after {
-  display: none;
-}
-
-.globe-poster-button img {
-  position: relative;
-  z-index: 1;
-  display: block;
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-  pointer-events: none;
-}
-
-.globe-poster-button--selected {
-  border-color: #ec6f66;
-  box-shadow: 0 8px 18px rgba(0, 0, 0, 0.38);
-}
-
 @media (max-width: 560px) {
   .country-select {
     top: 16px;
@@ -618,7 +557,7 @@ select {
     transform: none;
   }
 
-  .country-poster-panel {
+  .movie-panel {
     top: 64px;
     right: 16px;
     left: 16px;
@@ -626,7 +565,7 @@ select {
     height: min(420px, calc(100vh - 292px));
   }
 
-  .country-poster-grid {
+  .movie-grid {
     grid-auto-rows: 132px;
   }
 

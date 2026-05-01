@@ -97,7 +97,6 @@ function GlobeScene<TPayload>({
   billboardLayout = "flat",
   minCameraDistance = 2.18,
   maxCameraDistance = 7.2,
-  focusedCameraDistance,
   enableGlobeShading = false,
   enableAtmosphere = true,
   showBacksideBillboards = false,
@@ -183,11 +182,7 @@ function GlobeScene<TPayload>({
     }
 
     const currentDistance = camera.position.length();
-    const distance = THREE.MathUtils.clamp(
-      focusedCameraDistance ? Math.min(currentDistance, focusedCameraDistance) : currentDistance,
-      minCameraDistance,
-      maxCameraDistance
-    );
+    const distance = THREE.MathUtils.clamp(currentDistance, minCameraDistance, maxCameraDistance);
     const targetPosition = countryCenterVector(country, distance);
     const clampedSpherical = new THREE.Spherical().setFromVector3(targetPosition);
     clampedSpherical.phi = THREE.MathUtils.clamp(
