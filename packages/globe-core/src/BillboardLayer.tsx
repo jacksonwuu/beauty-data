@@ -4,7 +4,13 @@ import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import * as THREE from "three";
 import { countryIdToAlpha2 } from "./countryCodes";
 import { latLonToVector3, vector3ToLatLon } from "./geo";
-import type { CountryCoordinateMap, CountryFeature, GlobeBillboardItem, GlobeBillboardLayoutMode } from "./types";
+import type {
+  CountryCoordinateMap,
+  CountryFeature,
+  GlobeBillboardItem,
+  GlobeBillboardLayoutMode,
+  GlobeBillboardPlacementMode
+} from "./types";
 
 interface BillboardLayerProps<TPayload> {
   items: Array<GlobeBillboardItem<TPayload>>;
@@ -14,6 +20,7 @@ interface BillboardLayerProps<TPayload> {
   selectedItemId?: string | null;
   billboardScale?: number;
   billboardLayout?: GlobeBillboardLayoutMode;
+  billboardPlacement?: GlobeBillboardPlacementMode;
   showBacksideBillboards?: boolean;
   onItemHover?: (item: GlobeBillboardItem<TPayload> | null, event?: { clientX: number; clientY: number }) => void;
   onItemClick?: (item: GlobeBillboardItem<TPayload>) => void;
@@ -453,6 +460,101 @@ function pickLonInSpans(spans: LayoutSpan[], slotIndex: number, slotCount: numbe
   return (lastSpan.startLon + lastSpan.endLon) / 2;
 }
 
+function makeSpreadCandidates(
+  rings: LayoutRing[],
+  count: number,
+  stableSeed: string
+): Array<{ lat: number; lon: number }> {
+  const bounds = boundsForRings(rings);
+
+  if (!Number.isFinite(bounds.minLat) || count === 0) {
+    return [];
+  }
+
+  const latBands = clamp(Math.ceil(Math.sqrt(count) * 7), 10, 34);
+  const candidates: Array<{ lat: number; lon: number }> = [];
+
+  for (let bandIndex = 0; bandIndex < latBands; bandIndex += 1) {
+    const lat = bounds.maxLat - ((bandIndex + 0.5) / latBands) * (bounds.maxLat - bounds.minLat);
+    const spans = spansForLat(rings, lat);
+
+    spans.forEach((span, spanIndex) => {
+      const meanLatScale = Math.max(0.24, Math.cos(THREE.MathUtils.degToRad(lat)));
+      const slots = clamp(Math.ceil(span.width * meanLatScale * latBands * 0.42), 1, Math.max(count, 2));
+
+      for (let slotIndex = 0; slotIndex < slots; slotIndex += 1) {
+        const phase = ((stableHash(`${stableSeed}-${bandIndex}-${spanIndex}-${slotIndex}`) % 100) / 100 - 0.5) * 0.18;
+        const ratio = clamp((slotIndex + 0.5 + phase) / slots, 0.08, 0.92);
+        candidates.push({
+          lat,
+          lon: wrapLongitude(span.startLon + span.width * ratio)
+        });
+      }
+    });
+  }
+
+  return candidates;
+}
+
+function selectSpreadPoints(
+  candidates: Array<{ lat: number; lon: number }>,
+  count: number,
+  anchor: { lat: number; lon: number }
+) {
+  if (candidates.length <= count) {
+    return candidates;
+  }
+
+  const selected: Array<{ lat: number; lon: number }> = [];
+  const used = new Set<number>();
+  let firstIndex = 0;
+  let firstDistance = Number.POSITIVE_INFINITY;
+
+  candidates.forEach((candidate, index) => {
+    const distance = distanceDegrees(candidate, anchor);
+
+    if (distance < firstDistance) {
+      firstDistance = distance;
+      firstIndex = index;
+    }
+  });
+
+  selected.push(candidates[firstIndex]);
+  used.add(firstIndex);
+
+  while (selected.length < count && used.size < candidates.length) {
+    let bestIndex = -1;
+    let bestScore = Number.NEGATIVE_INFINITY;
+
+    candidates.forEach((candidate, index) => {
+      if (used.has(index)) {
+        return;
+      }
+
+      const nearestSelectedDistance = selected.reduce(
+        (nearest, point) => Math.min(nearest, distanceDegrees(candidate, point)),
+        Number.POSITIVE_INFINITY
+      );
+      const anchorDistance = distanceDegrees(candidate, anchor);
+      const score = nearestSelectedDistance + anchorDistance * 0.04;
+
+      if (score > bestScore) {
+        bestScore = score;
+        bestIndex = index;
+      }
+    });
+
+    if (bestIndex === -1) {
+      break;
+    }
+
+    selected.push(candidates[bestIndex]);
+    used.add(bestIndex);
+  }
+
+  return selected;
+}
+
 function tangentBasis(lat: number, lon: number) {
   const normal = latLonToVector3(lat, lon, 1).normalize();
   let east = latLonToVector3(lat, lon + 0.1, 1).sub(normal).normalize();
@@ -628,6 +730,7 @@ function layoutItemsForCountry<TPayload>(
   countryItems: Array<GlobeBillboardItem<TPayload>>,
   coordinate: { lat: number; lon: number },
   layoutMode: GlobeBillboardLayoutMode,
+  placementMode: GlobeBillboardPlacementMode,
   country?: CountryFeature
 ) {
   const sortedItems = [...countryItems].sort((first, second) => first.id.localeCompare(second.id));
@@ -635,7 +738,10 @@ function layoutItemsForCountry<TPayload>(
   const autoScale = Math.max(0.7, Math.min(1, 1.04 - Math.max(0, count - 10) * 0.018));
 
   if (country) {
-    const countryLayout = layoutItemsAcrossCountry(sortedItems, coordinate, layoutMode, country, autoScale);
+    const countryLayout =
+      placementMode === "spread"
+        ? layoutItemsSpreadAcrossCountry(sortedItems, coordinate, layoutMode, country, autoScale)
+        : layoutItemsAcrossCountry(sortedItems, coordinate, layoutMode, country, autoScale);
 
     if (countryLayout.length > 0) {
       return countryLayout;
@@ -671,6 +777,41 @@ function layoutItemsForCountry<TPayload>(
           : new THREE.Quaternion(),
       autoScale,
       stackIndex: 24 + row * 6 + Math.round((90 - lat) * 0.36)
+    };
+  });
+}
+
+function layoutItemsSpreadAcrossCountry<TPayload>(
+  sortedItems: Array<GlobeBillboardItem<TPayload>>,
+  coordinate: { lat: number; lon: number },
+  layoutMode: GlobeBillboardLayoutMode,
+  country: CountryFeature,
+  autoScale: number
+): Array<PositionedBillboard<TPayload>> {
+  const rings = makeLayoutRings(country, coordinate);
+  const candidates = makeSpreadCandidates(rings, sortedItems.length, country.id);
+  const points = selectSpreadPoints(candidates, sortedItems.length, coordinate).sort(
+    (first, second) => second.lat - first.lat || first.lon - second.lon
+  );
+  const radius = layoutMode === "flat" ? 2.018 : 2.028;
+
+  if (points.length === 0) {
+    return [];
+  }
+
+  return sortedItems.map((item, index) => {
+    const point = points[index % points.length];
+    const layout = positionOnGlobe(point, 0, 0, radius);
+
+    return {
+      item,
+      position: layout.position,
+      quaternion:
+        layoutMode === "standing"
+          ? standingQuaternion(layout.normal, layout.east, layout.north)
+          : new THREE.Quaternion(),
+      autoScale,
+      stackIndex: 24 + Math.round((90 - point.lat) * 0.42) + index
     };
   });
 }
@@ -810,6 +951,7 @@ export function BillboardLayer<TPayload>({
   selectedItemId,
   billboardScale = 1,
   billboardLayout = "flat",
+  billboardPlacement = "rows",
   showBacksideBillboards = false,
   onItemHover,
   onItemClick
@@ -840,9 +982,15 @@ export function BillboardLayer<TPayload>({
         return [];
       }
 
-      return layoutItemsForCountry(countryItems, coordinate, billboardLayout, countriesByCode.get(countryCode));
+      return layoutItemsForCountry(
+        countryItems,
+        coordinate,
+        billboardLayout,
+        billboardPlacement,
+        countriesByCode.get(countryCode)
+      );
     });
-  }, [billboardLayout, countries, countryCoordinates, items]);
+  }, [billboardLayout, billboardPlacement, countries, countryCoordinates, items]);
 
   return (
     <>

@@ -6,9 +6,10 @@ interface MovieDetailProps {
   movie: Movie | null;
   onClose: () => void;
   onCountryClick?: (countryCode: string) => void;
+  onGenreClick?: (genre: string) => void;
 }
 
-export function MovieDetail({ movie, onClose, onCountryClick }: MovieDetailProps) {
+export function MovieDetail({ movie, onClose, onCountryClick, onGenreClick }: MovieDetailProps) {
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
       if (event.key === "Escape") {
@@ -48,7 +49,9 @@ export function MovieDetail({ movie, onClose, onCountryClick }: MovieDetailProps
           <p className="detail-summary">{movie.summary}</p>
           <div className="genre-row">
             {movie.genres.map((genre) => (
-              <span key={genre}>{genre}</span>
+              <button key={genre} type="button" onClick={() => onGenreClick?.(genre)}>
+                {genre}
+              </button>
             ))}
           </div>
         </div>

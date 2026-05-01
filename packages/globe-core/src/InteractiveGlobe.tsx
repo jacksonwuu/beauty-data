@@ -95,6 +95,7 @@ function GlobeScene<TPayload>({
   selectedItemId,
   billboardScale = 1,
   billboardLayout = "flat",
+  billboardPlacement = "rows",
   minCameraDistance = 2.18,
   maxCameraDistance = 7.2,
   enableGlobeShading = false,
@@ -244,7 +245,7 @@ function GlobeScene<TPayload>({
     <>
       <ambientLight intensity={1.4} />
       <directionalLight position={[5, 4, 6]} intensity={1.8} color="#f7f3df" />
-      <Stars radius={58} depth={18} count={650} factor={1.25} saturation={0} fade speed={0.06} />
+      <Stars radius={58} depth={22} count={1400} factor={1.85} saturation={0.18} fade speed={0.05} />
 
       <group ref={globeGroupRef}>
         <mesh
@@ -286,6 +287,7 @@ function GlobeScene<TPayload>({
           selectedItemId={selectedItemId}
           billboardScale={billboardScale}
           billboardLayout={billboardLayout}
+          billboardPlacement={billboardPlacement}
           showBacksideBillboards={showBacksideBillboards}
           onItemHover={handleItemHover}
           onItemClick={onItemClick}

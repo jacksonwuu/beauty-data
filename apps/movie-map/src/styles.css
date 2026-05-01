@@ -61,15 +61,17 @@ select {
 
 .detail-country-button {
   display: inline-block;
-  padding: 0;
-  border: 0;
-  background: transparent;
+  padding: 5px 7px;
+  border: 1px solid rgba(98, 215, 200, 0.3);
+  background: #0d1718;
   cursor: pointer;
   text-align: left;
 }
 
 .detail-country-button:hover {
   color: #f6c453;
+  border-color: rgba(246, 196, 83, 0.7);
+  background: #151615;
 }
 
 .country-select {
@@ -296,31 +298,35 @@ select {
   bottom: 18px;
   left: 20px;
   display: grid;
-  grid-template-columns: minmax(150px, 220px) minmax(220px, 300px) auto minmax(150px, 190px) auto;
+  grid-template-columns: minmax(112px, 160px) minmax(170px, 238px) auto auto minmax(118px, 152px) auto;
   align-items: center;
-  gap: 12px;
+  gap: 8px;
   width: fit-content;
   max-width: calc(100vw - 40px);
   margin: 0 auto;
-  padding: 10px 12px;
-  border: 1px solid rgba(246, 240, 223, 0.18);
+  padding: 6px 8px;
+  border: 1px solid rgba(246, 240, 223, 0.12);
   border-radius: 0;
-  background: #080c0d;
-  box-shadow: 0 14px 36px rgba(0, 0, 0, 0.3);
+  background: #060909;
+  box-shadow: 0 10px 28px rgba(0, 0, 0, 0.26);
 }
 
 .dock-control {
   display: grid;
-  gap: 5px;
+  gap: 3px;
   min-width: 0;
 }
 
 .dock-control--layout {
-  min-width: 148px;
+  min-width: 122px;
+}
+
+.dock-control--placement {
+  min-width: 128px;
 }
 
 .dock-control--genre {
-  min-width: 150px;
+  min-width: 118px;
 }
 
 .dock-control-header {
@@ -334,28 +340,28 @@ select {
 .dock-control-header strong,
 .range-with-endpoints span,
 .dock-summary span {
-  color: rgba(246, 240, 223, 0.74);
-  font-size: 0.72rem;
+  color: rgba(246, 240, 223, 0.54);
+  font-size: 0.64rem;
   font-weight: 800;
 }
 
 .dock-control-header strong {
-  min-width: 42px;
-  color: #f6c453;
+  min-width: 34px;
+  color: rgba(246, 196, 83, 0.86);
   text-align: right;
 }
 
 .range-with-endpoints {
   display: grid;
-  grid-template-columns: auto minmax(140px, 1fr) auto;
+  grid-template-columns: auto minmax(110px, 1fr) auto;
   align-items: center;
-  gap: 8px;
+  gap: 6px;
 }
 
 .dock-summary {
   display: grid;
-  min-width: 58px;
-  padding: 3px 2px 0 6px;
+  min-width: 48px;
+  padding: 2px 4px 2px 8px;
   border: 0;
   border-left: 1px solid rgba(246, 240, 223, 0.14);
   line-height: 1.05;
@@ -366,7 +372,7 @@ select {
 
 .dock-summary strong {
   color: #f6c453;
-  font-size: 0.95rem;
+  font-size: 0.86rem;
   font-weight: 900;
 }
 
@@ -377,7 +383,7 @@ select {
 
 .control-dock input[type="range"] {
   width: 100%;
-  height: 16px;
+  height: 12px;
   margin: 0;
   accent-color: #f6c453;
   cursor: ew-resize;
@@ -385,14 +391,14 @@ select {
 
 .genre-select {
   width: 100%;
-  height: 29px;
+  height: 23px;
   min-width: 0;
-  padding: 0 30px 0 9px;
-  border: 1px solid rgba(246, 240, 223, 0.14);
+  padding: 0 22px 0 7px;
+  border: 1px solid rgba(246, 240, 223, 0.1);
   border-radius: 0;
   color: #fff8df;
-  background: #111719;
-  font-size: 0.75rem;
+  background: #0d1112;
+  font-size: 0.68rem;
   font-weight: 900;
   outline: none;
   cursor: pointer;
@@ -406,28 +412,28 @@ select {
 .layout-toggle {
   display: grid;
   grid-template-columns: 1fr 1fr;
-  gap: 3px;
-  padding: 3px;
-  border: 1px solid rgba(246, 240, 223, 0.14);
+  gap: 1px;
+  padding: 1px;
+  border: 1px solid rgba(246, 240, 223, 0.1);
   border-radius: 0;
-  background: #111719;
+  background: #0d1112;
 }
 
 .layout-toggle-button {
   min-width: 0;
-  padding: 5px 8px;
+  padding: 4px 6px;
   border: 0;
   border-radius: 0;
   color: rgba(246, 240, 223, 0.68);
   background: transparent;
-  font-size: 0.72rem;
+  font-size: 0.66rem;
   font-weight: 900;
   cursor: pointer;
 }
 
 .layout-toggle-button--active {
   color: #081011;
-  background: #f6c453;
+  background: #d9ad46;
 }
 
 .detail-backdrop {
@@ -475,6 +481,7 @@ select {
   grid-template-columns: minmax(160px, 240px) minmax(0, 420px);
   gap: 22px;
   width: min(720px, 100%);
+  max-height: min(680px, calc(100vh - 48px));
   padding: 18px;
   border: 1px solid rgba(246, 240, 223, 0.22);
   border-radius: 0;
@@ -510,17 +517,24 @@ select {
 }
 
 .detail-copy {
+  display: grid;
+  align-content: start;
   min-width: 0;
+  min-height: 0;
   padding: 16px 34px 8px 0;
+  overflow-y: auto;
+  overflow-x: hidden;
 }
 
 .detail-copy h2 {
   margin: 0 0 12px;
   color: #fff8df;
   font-family: Georgia, "Times New Roman", serif;
-  font-size: clamp(1.8rem, 5vw, 3.4rem);
-  line-height: 0.98;
+  font-size: clamp(1.45rem, 3vw, 2.55rem);
+  line-height: 1.06;
   letter-spacing: 0;
+  overflow-wrap: anywhere;
+  word-break: normal;
 }
 
 .detail-meta,
@@ -531,7 +545,7 @@ select {
 }
 
 .detail-meta span,
-.genre-row span {
+.genre-row button {
   padding: 6px 8px;
   border: 1px solid rgba(246, 240, 223, 0.16);
   border-radius: 0;
@@ -539,6 +553,16 @@ select {
   background: #111719;
   font-size: 0.78rem;
   font-weight: 800;
+}
+
+.genre-row button {
+  cursor: pointer;
+}
+
+.genre-row button:hover {
+  border-color: rgba(246, 196, 83, 0.72);
+  color: #f6c453;
+  background: #151615;
 }
 
 .detail-summary {
@@ -603,5 +627,10 @@ select {
 
   .detail-copy {
     padding: 0;
+    overflow: visible;
+  }
+
+  .detail-copy h2 {
+    font-size: clamp(1.35rem, 8vw, 2.15rem);
   }
 }

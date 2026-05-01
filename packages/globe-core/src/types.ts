@@ -1,5 +1,6 @@
 export type CountryCoordinateMap = Record<string, { lat: number; lon: number }>;
 export type GlobeBillboardLayoutMode = "standing" | "flat";
+export type GlobeBillboardPlacementMode = "rows" | "spread";
 
 export interface CountryFeature {
   id: string;
@@ -23,6 +24,7 @@ export interface GlobeCoreProps<TPayload = unknown> {
   selectedItemId?: string | null;
   billboardScale?: number;
   billboardLayout?: GlobeBillboardLayoutMode;
+  billboardPlacement?: GlobeBillboardPlacementMode;
   minCameraDistance?: number;
   maxCameraDistance?: number;
   enableGlobeShading?: boolean;

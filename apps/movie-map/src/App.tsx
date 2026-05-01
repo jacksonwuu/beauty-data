@@ -4,7 +4,8 @@ import {
   countryIdToAlpha2,
   type CountryFeature,
   type GlobeBillboardItem,
-  type GlobeBillboardLayoutMode
+  type GlobeBillboardLayoutMode,
+  type GlobeBillboardPlacementMode
 } from "@beauty-data/globe-core";
 import { ChevronDown, MapPinned, X } from "lucide-react";
 import { useMemo, useState } from "react";
@@ -28,6 +29,7 @@ function App() {
   const [countrySearch, setCountrySearch] = useState("");
   const [posterScale, setPosterScale] = useState(1);
   const [posterLayout, setPosterLayout] = useState<GlobeBillboardLayoutMode>("flat");
+  const [moviePlacement, setMoviePlacement] = useState<GlobeBillboardPlacementMode>("rows");
   const [selectedGenre, setSelectedGenre] = useState("All");
   const [hoveredMovieTooltip, setHoveredMovieTooltip] = useState<{ movie: Movie; x: number; y: number } | null>(null);
 
@@ -131,6 +133,7 @@ function App() {
           selectedItemId={selectedMovie?.id}
           billboardScale={posterScale}
           billboardLayout={posterLayout}
+          billboardPlacement={moviePlacement}
           minCameraDistance={2.18}
           maxCameraDistance={7.8}
           onCountryHover={setHoveredCountry}
@@ -249,7 +252,6 @@ function App() {
         <div className="dock-control">
           <div className="dock-control-header">
             <span>Release year</span>
-            <strong>{selectedYear}</strong>
           </div>
           <div className="range-with-endpoints">
             <span>{minYear}</span>
@@ -284,10 +286,27 @@ function App() {
           </div>
         </div>
 
+        <div className="dock-control dock-control--placement">
+          <div className="dock-control-header">
+            <span>Placement</span>
+          </div>
+          <div className="layout-toggle" role="group" aria-label="Movie placement">
+            {(["rows", "spread"] as const).map((placement) => (
+              <button
+                key={placement}
+                className={moviePlacement === placement ? "layout-toggle-button layout-toggle-button--active" : "layout-toggle-button"}
+                type="button"
+                onClick={() => setMoviePlacement(placement)}
+              >
+                {placement === "rows" ? "Rows" : "Spread"}
+              </button>
+            ))}
+          </div>
+        </div>
+
         <div className="dock-control dock-control--genre">
           <div className="dock-control-header">
             <span>Genre</span>
-            <strong>{selectedGenre}</strong>
           </div>
           <select
             className="genre-select"
@@ -326,6 +345,11 @@ function App() {
           }
 
           showCountryMovies(country);
+          setSelectedMovie(null);
+        }}
+        onGenreClick={(genre) => {
+          setSelectedGenre(genre);
+          setMoviePanelMode("filtered");
           setSelectedMovie(null);
         }}
       />

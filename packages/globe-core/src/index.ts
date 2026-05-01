@@ -16,5 +16,6 @@ export type {
   CountryFeature,
   GlobeBillboardItem,
   GlobeBillboardLayoutMode,
+  GlobeBillboardPlacementMode,
   GlobeCoreProps
 } from "./types";
