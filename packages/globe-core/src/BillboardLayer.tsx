@@ -1,6 +1,6 @@
 import { Billboard } from "@react-three/drei";
 import { ThreeEvent, useFrame, useThree } from "@react-three/fiber";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import * as THREE from "three";
 import { countryIdToAlpha2 } from "./countryCodes";
 import { latLonToVector3, vector3ToLatLon } from "./geo";
@@ -513,10 +513,10 @@ function PosterCardMesh<TPayload>({
   onItemClick
 }: PosterCardMeshProps<TPayload>) {
   const cardRef = useRef<THREE.Group>(null);
-  const [hovered, setHovered] = useState(false);
   const { gl } = useThree();
   const [texture, setTexture] = useState<THREE.Texture>(() => makePosterPlaceholderTexture(item.id));
-  const raised = hovered || selected;
+  const worldPositionRef = useRef(new THREE.Vector3());
+  const raised = selected;
   const renderOrder = raised ? 1200 : stackIndex;
 
   useEffect(() => {
@@ -554,7 +554,7 @@ function PosterCardMesh<TPayload>({
       return;
     }
 
-    const worldPosition = new THREE.Vector3();
+    const worldPosition = worldPositionRef.current;
     cardRef.current.getWorldPosition(worldPosition);
     const cameraDistance = camera.position.distanceTo(worldPosition);
     const perspectiveCamera = camera as THREE.PerspectiveCamera;
@@ -572,7 +572,6 @@ function PosterCardMesh<TPayload>({
 
   const handlePointerEnter = (event: ThreeEvent<PointerEvent>) => {
     event.stopPropagation();
-    setHovered(true);
     setCanvasCursor("pointer");
     onItemHover?.(item, pointerClientPosition(event));
   };
@@ -584,7 +583,6 @@ function PosterCardMesh<TPayload>({
 
   const handlePointerLeave = (event: ThreeEvent<PointerEvent>) => {
     event.stopPropagation();
-    setHovered(false);
     setCanvasCursor("grab");
     onItemHover?.(null);
   };
@@ -599,7 +597,7 @@ function PosterCardMesh<TPayload>({
       <mesh renderOrder={renderOrder * 2} scale={[1.06, 1.045, 1]} position={[0, 0, -0.003]}>
         <planeGeometry args={[1, 1]} />
         <meshBasicMaterial
-          color={selected ? "#f2b45d" : hovered ? "#fff2c8" : "#121719"}
+          color={selected ? "#f2b45d" : "#121719"}
           depthTest={false}
           depthWrite={false}
           toneMapped={false}
@@ -736,25 +734,22 @@ function BillboardItem<TPayload>({
   onItemClick
 }: BillboardItemProps<TPayload>) {
   const groupRef = useRef<THREE.Group>(null);
-  const initializedRef = useRef(false);
+  const worldPositionRef = useRef(new THREE.Vector3());
+  const cameraDirectionRef = useRef(new THREE.Vector3());
   const [frontFacing, setFrontFacing] = useState(true);
   const handleSelect = (event: ThreeEvent<MouseEvent | PointerEvent>) => {
     event.stopPropagation();
     onItemClick?.(item);
   };
 
-  useFrame(({ camera }) => {
+  useLayoutEffect(() => {
     if (groupRef.current) {
-      if (!initializedRef.current) {
-        groupRef.current.position.copy(position);
-        groupRef.current.quaternion.copy(quaternion);
-        initializedRef.current = true;
-      } else {
-        groupRef.current.position.lerp(position, 0.16);
-        groupRef.current.quaternion.slerp(quaternion, 0.16);
-      }
+      groupRef.current.position.copy(position);
+      groupRef.current.quaternion.copy(quaternion);
     }
+  }, [position, quaternion]);
 
+  useFrame(({ camera }) => {
     if (showBacksideBillboards) {
       if (!frontFacing) {
         setFrontFacing(true);
@@ -762,9 +757,13 @@ function BillboardItem<TPayload>({
       return;
     }
 
-    const worldPosition = new THREE.Vector3();
-    groupRef.current?.getWorldPosition(worldPosition);
-    const cameraDirection = camera.position.clone().normalize();
+    if (!groupRef.current) {
+      return;
+    }
+
+    const worldPosition = worldPositionRef.current;
+    groupRef.current.getWorldPosition(worldPosition);
+    const cameraDirection = cameraDirectionRef.current.copy(camera.position).normalize();
     const itemDirection = worldPosition.normalize();
     const facingScore = itemDirection.dot(cameraDirection);
 

@@ -1,11 +1,12 @@
 import {
   InteractiveGlobe,
   WORLD_COUNTRIES,
+  countryIdToAlpha2,
   type CountryFeature,
   type GlobeBillboardItem,
   type GlobeBillboardLayoutMode
 } from "@beauty-data/globe-core";
-import { ChevronDown, MapPinned } from "lucide-react";
+import { ChevronDown, MapPinned, X } from "lucide-react";
 import { useMemo, useState } from "react";
 import { MovieDetail } from "./components/MovieDetail";
 import { countryEmoji } from "./data/countryFlags";
@@ -13,22 +14,40 @@ import { movies, type Movie } from "./data/movies";
 
 const minYear = Math.min(...movies.map((movie) => movie.year));
 const maxYear = Math.max(...movies.map((movie) => movie.year));
+const allGenres = [...new Set(movies.flatMap((movie) => movie.genres))].sort((first, second) =>
+  first.localeCompare(second)
+);
 
 function App() {
   const [selectedYear, setSelectedYear] = useState(maxYear);
   const [selectedMovie, setSelectedMovie] = useState<Movie | null>(null);
   const [hoveredCountry, setHoveredCountry] = useState<CountryFeature | null>(null);
   const [selectedCountry, setSelectedCountry] = useState<CountryFeature | null>(null);
+  const [posterPanelMode, setPosterPanelMode] = useState<"country" | "filtered" | null>(null);
   const [countryMenuOpen, setCountryMenuOpen] = useState(false);
   const [countrySearch, setCountrySearch] = useState("");
   const [posterScale, setPosterScale] = useState(1);
   const [posterLayout, setPosterLayout] = useState<GlobeBillboardLayoutMode>("flat");
+  const [selectedGenre, setSelectedGenre] = useState("All");
   const [hoveredMovieTooltip, setHoveredMovieTooltip] = useState<{ movie: Movie; x: number; y: number } | null>(null);
 
   const countries = useMemo(
     () => [...WORLD_COUNTRIES].sort((first, second) => first.name.localeCompare(second.name)),
     []
   );
+  const countryByCode = useMemo(() => {
+    const mappedCountries = new Map<string, CountryFeature>();
+
+    countries.forEach((country) => {
+      const countryCode = countryIdToAlpha2(country.id);
+
+      if (countryCode) {
+        mappedCountries.set(countryCode, country);
+      }
+    });
+
+    return mappedCountries;
+  }, [countries]);
 
   const filteredCountries = useMemo(() => {
     const query = countrySearch.trim().toLowerCase();
@@ -41,11 +60,50 @@ function App() {
   }, [countries, countrySearch]);
 
   const displayedCountry = hoveredCountry ?? selectedCountry;
+  const movieCountByCountry = useMemo(() => {
+    const counts = new Map<string, number>();
+
+    movies.forEach((movie) => {
+      counts.set(movie.countryCode, (counts.get(movie.countryCode) ?? 0) + 1);
+    });
+
+    return counts;
+  }, []);
+
+  const selectedCountryMovies = useMemo(() => {
+    const countryCode = countryIdToAlpha2(selectedCountry?.id);
+
+    if (!countryCode) {
+      return [];
+    }
+
+    return movies
+      .filter((movie) => movie.countryCode === countryCode)
+      .sort((first, second) => second.year - first.year || first.title.localeCompare(second.title));
+  }, [selectedCountry]);
 
   const visibleMovies = useMemo(
-    () => movies.filter((movie) => movie.year <= selectedYear),
-    [selectedYear]
+    () =>
+      movies.filter(
+        (movie) => movie.year <= selectedYear && (selectedGenre === "All" || movie.genres.includes(selectedGenre))
+      ),
+    [selectedGenre, selectedYear]
   );
+
+  const rankedVisibleMovies = useMemo(
+    () =>
+      [...visibleMovies].sort(
+        (first, second) =>
+          second.rating - first.rating || second.year - first.year || first.title.localeCompare(second.title)
+      ),
+    [visibleMovies]
+  );
+
+  const posterPanelMovies = posterPanelMode === "country" ? selectedCountryMovies : rankedVisibleMovies;
+  const posterPanelTitle =
+    posterPanelMode === "country" && selectedCountry ? `${countryEmoji(selectedCountry.id)} ${selectedCountry.name}` : "Filtered movies";
+  const posterPanelSubtitle =
+    posterPanelMode === "country" ? `${posterPanelMovies.length} movies` : `${posterPanelMovies.length} ranked by score`;
 
   const globeItems = useMemo<Array<GlobeBillboardItem<Movie>>>(
     () =>
@@ -61,17 +119,22 @@ function App() {
 
   return (
     <main className="app-shell">
-      <section className="stage" aria-label="Interactive movie poster globe">
+      <section className="stage" aria-label="Interactive movie globe">
         <InteractiveGlobe
           items={globeItems}
           focusedCountryId={selectedCountry?.id}
           selectedItemId={selectedMovie?.id}
           billboardScale={posterScale}
           billboardLayout={posterLayout}
+          minCameraDistance={2.18}
+          maxCameraDistance={7.8}
           enableGlobeShading={false}
           showBacksideBillboards={false}
           onCountryHover={setHoveredCountry}
-          onCountryClick={setSelectedCountry}
+          onCountryClick={(country) => {
+            setSelectedCountry(country);
+            setPosterPanelMode(country ? "country" : null);
+          }}
           onItemHover={(item, event) => {
             if (!item || !event) {
               setHoveredMovieTooltip(null);
@@ -114,12 +177,14 @@ function App() {
                 type="button"
                 onClick={() => {
                   setSelectedCountry(country);
+                  setPosterPanelMode("country");
                   setCountryMenuOpen(false);
                   setCountrySearch("");
                 }}
               >
                 <span>{countryEmoji(country.id)}</span>
                 <span>{country.name}</span>
+                <span className="country-count-badge">{movieCountByCountry.get(countryIdToAlpha2(country.id) ?? "") ?? 0}</span>
               </button>
             ))}
             {filteredCountries.length === 0 ? <p className="country-empty">No countries found</p> : null}
@@ -127,14 +192,52 @@ function App() {
         ) : null}
       </aside>
 
+      {posterPanelMode ? (
+        <aside className="country-poster-panel" aria-label={posterPanelTitle}>
+          <div className="country-poster-panel-header">
+            <div>
+              <p className="detail-kicker">{posterPanelTitle}</p>
+              <h2>{posterPanelSubtitle}</h2>
+            </div>
+            <button
+              className="icon-button country-panel-close"
+              type="button"
+              onClick={() => {
+                setPosterPanelMode(null);
+                if (posterPanelMode === "country") {
+                  setSelectedCountry(null);
+                }
+              }}
+              aria-label="Close movie list"
+            >
+              <X size={17} />
+            </button>
+          </div>
+          <div className="country-poster-grid">
+            {posterPanelMovies.map((movie) => (
+              <button
+                key={movie.id}
+                className={selectedMovie?.id === movie.id ? "country-poster-card country-poster-card--active" : "country-poster-card"}
+                type="button"
+                onClick={() => setSelectedMovie(movie)}
+                aria-label={`Open ${movie.title} details`}
+              >
+                <img src={movie.posterUrl} alt={`${movie.title} movie artwork`} />
+                <span>{movie.year}</span>
+              </button>
+            ))}
+          </div>
+        </aside>
+      ) : null}
+
       <section className="control-dock" aria-label="Map filters">
         <div className="dock-control">
           <div className="dock-control-header">
-            <span>Poster size</span>
+            <span>Size</span>
             <strong>{Math.round(posterScale * 100)}%</strong>
           </div>
           <input
-            aria-label="Poster cover size"
+            aria-label="Movie cover size"
             type="range"
             min={0.55}
             max={1.8}
@@ -168,7 +271,7 @@ function App() {
           <div className="dock-control-header">
             <span>Layout</span>
           </div>
-          <div className="layout-toggle" role="group" aria-label="Poster layout">
+          <div className="layout-toggle" role="group" aria-label="Movie layout">
             {(["flat", "standing"] as const).map((layout) => (
               <button
                 key={layout}
@@ -182,13 +285,52 @@ function App() {
           </div>
         </div>
 
-        <div className="dock-summary">
-          <strong>{visibleMovies.length}</strong>
-          <span>posters</span>
+        <div className="dock-control dock-control--genre">
+          <div className="dock-control-header">
+            <span>Genre</span>
+            <strong>{selectedGenre}</strong>
+          </div>
+          <select
+            className="genre-select"
+            aria-label="Filter movies by genre"
+            value={selectedGenre}
+            onChange={(event) => setSelectedGenre(event.target.value)}
+          >
+            <option value="All">All genres</option>
+            {allGenres.map((genre) => (
+              <option key={genre} value={genre}>
+                {genre}
+              </option>
+            ))}
+          </select>
         </div>
+
+        <button
+          className={posterPanelMode === "filtered" ? "dock-summary dock-summary--active" : "dock-summary"}
+          type="button"
+          onClick={() => setPosterPanelMode("filtered")}
+          aria-label="Show currently visible movies ranked by score"
+        >
+          <strong>{visibleMovies.length}</strong>
+          <span>movies</span>
+        </button>
       </section>
 
-      <MovieDetail movie={selectedMovie} onClose={() => setSelectedMovie(null)} />
+      <MovieDetail
+        movie={selectedMovie}
+        onClose={() => setSelectedMovie(null)}
+        onCountryClick={(countryCode) => {
+          const country = countryByCode.get(countryCode);
+
+          if (!country) {
+            return;
+          }
+
+          setSelectedCountry(country);
+          setPosterPanelMode("country");
+          setSelectedMovie(null);
+        }}
+      />
       {hoveredMovieTooltip ? (
         <div className="movie-tooltip" style={{ left: hoveredMovieTooltip.x + 14, top: hoveredMovieTooltip.y + 14 }}>
           <strong>{hoveredMovieTooltip.movie.title}</strong>

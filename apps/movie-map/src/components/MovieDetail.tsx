@@ -5,9 +5,10 @@ import type { Movie } from "../data/movies";
 interface MovieDetailProps {
   movie: Movie | null;
   onClose: () => void;
+  onCountryClick?: (countryCode: string) => void;
 }
 
-export function MovieDetail({ movie, onClose }: MovieDetailProps) {
+export function MovieDetail({ movie, onClose, onCountryClick }: MovieDetailProps) {
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
       if (event.key === "Escape") {
@@ -29,9 +30,15 @@ export function MovieDetail({ movie, onClose }: MovieDetailProps) {
         <button className="icon-button detail-close" type="button" onClick={onClose} aria-label="Close details">
           <X size={18} />
         </button>
-        <img src={movie.posterUrl} alt={`${movie.title} poster`} className="detail-poster" />
+        <img src={movie.posterUrl} alt={`${movie.title} movie artwork`} className="detail-poster" />
         <div className="detail-copy">
-          <p className="detail-kicker">{movie.countryName}</p>
+          <button
+            className="detail-kicker detail-country-button"
+            type="button"
+            onClick={() => onCountryClick?.(movie.countryCode)}
+          >
+            {movie.countryName}
+          </button>
           <h2>{movie.title}</h2>
           <div className="detail-meta">
             <span>{movie.year}</span>

@@ -24,6 +24,9 @@ export interface GlobeCoreProps<TPayload = unknown> {
   selectedItemId?: string | null;
   billboardScale?: number;
   billboardLayout?: GlobeBillboardLayoutMode;
+  minCameraDistance?: number;
+  maxCameraDistance?: number;
+  focusedCameraDistance?: number;
   enableGlobeShading?: boolean;
   enableAtmosphere?: boolean;
   showBacksideBillboards?: boolean;

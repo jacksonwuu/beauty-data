@@ -95,6 +95,9 @@ function GlobeScene<TPayload>({
   selectedItemId,
   billboardScale = 1,
   billboardLayout = "flat",
+  minCameraDistance = 2.18,
+  maxCameraDistance = 7.2,
+  focusedCameraDistance,
   enableGlobeShading = false,
   enableAtmosphere = true,
   showBacksideBillboards = false,
@@ -108,25 +111,11 @@ function GlobeScene<TPayload>({
   const controlsRef = useRef<ComponentRef<typeof OrbitControls>>(null);
   const globeGroupRef = useRef<THREE.Group>(null);
   const targetCameraPositionRef = useRef<THREE.Vector3 | null>(null);
-  const controlsDraggingRef = useRef(false);
-  const controlsInteractingRef = useRef(false);
-  const clearControlsDraggingFrameRef = useRef<number | null>(null);
+  const pointerDownPositionRef = useRef<{ x: number; y: number } | null>(null);
+  const pointerDraggingRef = useRef(false);
   const [internalHoveredCountry, setInternalHoveredCountry] = useState<CountryFeature | null>(null);
   const effectiveHoveredCountryId = hoveredCountryId ?? internalHoveredCountry?.id ?? null;
   const countries = useMemo(() => WORLD_COUNTRIES, []);
-  const countryByCode = useMemo(() => {
-    const mappedCountries = new Map<string, CountryFeature>();
-
-    countries.forEach((country) => {
-      const countryCode = countryIdToAlpha2(country.id);
-
-      if (countryCode) {
-        mappedCountries.set(countryCode, country);
-      }
-    });
-
-    return mappedCountries;
-  }, [countries]);
   const globeTexture = useMemo(() => makeGlobeTexture(countries), [countries]);
 
   const setCanvasCursor = (cursor: string) => {
@@ -181,27 +170,10 @@ function GlobeScene<TPayload>({
     setCanvasCursor("grab");
   };
 
-  const updateHoveredCountryFromItem = (item: GlobeBillboardItem<TPayload> | null) => {
-    if (!item) {
-      clearHoveredCountry();
-      return;
-    }
-
-    const country = countryByCode.get(item.countryCode) ?? null;
-
-    if (country?.id !== internalHoveredCountry?.id) {
-      setInternalHoveredCountry(country);
-      onCountryHover?.(country);
-    }
-
-    setCanvasCursor(country ? "pointer" : "grab");
-  };
-
   const handleItemHover = (
     item: Parameters<NonNullable<typeof onItemHover>>[0],
     event?: Parameters<NonNullable<typeof onItemHover>>[1]
   ) => {
-    updateHoveredCountryFromItem(item);
     onItemHover?.(item, event);
   };
 
@@ -210,7 +182,12 @@ function GlobeScene<TPayload>({
       return;
     }
 
-    const distance = camera.position.length();
+    const currentDistance = camera.position.length();
+    const distance = THREE.MathUtils.clamp(
+      focusedCameraDistance ? Math.min(currentDistance, focusedCameraDistance) : currentDistance,
+      minCameraDistance,
+      maxCameraDistance
+    );
     const targetPosition = countryCenterVector(country, distance);
     const clampedSpherical = new THREE.Spherical().setFromVector3(targetPosition);
     clampedSpherical.phi = THREE.MathUtils.clamp(
@@ -233,28 +210,39 @@ function GlobeScene<TPayload>({
     focusCountry(country ?? null, false);
   }, [countries, focusedCountryId]);
 
-  const cancelControlsDraggingClear = () => {
-    if (clearControlsDraggingFrameRef.current !== null) {
-      window.cancelAnimationFrame(clearControlsDraggingFrameRef.current);
-      clearControlsDraggingFrameRef.current = null;
-    }
+  const handleGlobePointerDown = (event: ThreeEvent<PointerEvent>) => {
+    pointerDownPositionRef.current = {
+      x: event.nativeEvent.clientX,
+      y: event.nativeEvent.clientY
+    };
+    pointerDraggingRef.current = false;
   };
 
-  const handleCountryClick = (event: ThreeEvent<MouseEvent>) => {
-    if (controlsDraggingRef.current) {
-      controlsDraggingRef.current = false;
-      cancelControlsDraggingClear();
+  const updatePointerDragState = (event: ThreeEvent<PointerEvent>) => {
+    const pointerDownPosition = pointerDownPositionRef.current;
+
+    if (!pointerDownPosition || pointerDraggingRef.current) {
       return;
     }
 
-    focusCountry(findCountryFromPoint(event.point));
+    const deltaX = event.nativeEvent.clientX - pointerDownPosition.x;
+    const deltaY = event.nativeEvent.clientY - pointerDownPosition.y;
+    pointerDraggingRef.current = Math.hypot(deltaX, deltaY) > 4;
   };
 
-  const clearControlsDraggingNextFrame = () => {
-    clearControlsDraggingFrameRef.current = window.requestAnimationFrame(() => {
-      controlsDraggingRef.current = false;
-      clearControlsDraggingFrameRef.current = null;
-    });
+  const handleCountryClick = (event: ThreeEvent<MouseEvent>) => {
+    const pointerDownPosition = pointerDownPositionRef.current;
+    const clickDistance = pointerDownPosition
+      ? Math.hypot(event.nativeEvent.clientX - pointerDownPosition.x, event.nativeEvent.clientY - pointerDownPosition.y)
+      : 0;
+    const wasDragging = pointerDraggingRef.current || clickDistance > 4;
+
+    pointerDownPositionRef.current = null;
+    pointerDraggingRef.current = false;
+
+    if (!wasDragging) {
+      focusCountry(findCountryFromPoint(event.point));
+    }
   };
 
   return (
@@ -265,7 +253,11 @@ function GlobeScene<TPayload>({
 
       <group ref={globeGroupRef}>
         <mesh
-          onPointerMove={updateHoveredCountry}
+          onPointerDown={handleGlobePointerDown}
+          onPointerMove={(event) => {
+            updatePointerDragState(event);
+            updateHoveredCountry(event);
+          }}
           onPointerOut={clearHoveredCountry}
           onClick={handleCountryClick}
         >
@@ -307,29 +299,14 @@ function GlobeScene<TPayload>({
       <OrbitControls
         ref={controlsRef}
         enablePan={false}
-        minDistance={3.1}
-        maxDistance={7.2}
+        minDistance={minCameraDistance}
+        maxDistance={maxCameraDistance}
         minPolarAngle={polarAngleLimit}
         maxPolarAngle={Math.PI - polarAngleLimit}
         dampingFactor={0.08}
         enableDamping
         onStart={() => {
-          cancelControlsDraggingClear();
           targetCameraPositionRef.current = null;
-          controlsInteractingRef.current = true;
-          controlsDraggingRef.current = false;
-        }}
-        onChange={() => {
-          if (controlsInteractingRef.current) {
-            controlsDraggingRef.current = true;
-          }
-        }}
-        onEnd={() => {
-          controlsInteractingRef.current = false;
-
-          if (controlsDraggingRef.current) {
-            clearControlsDraggingNextFrame();
-          }
         }}
       />
     </>

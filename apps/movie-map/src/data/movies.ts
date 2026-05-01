@@ -31,8 +31,8 @@ function poster(title: string, year: number, index: number) {
         <stop offset="1" stop-color="#050709"/>
       </linearGradient>
     </defs>
-    <rect width="320" height="460" rx="18" fill="url(#g)"/>
-    <rect x="22" y="24" width="276" height="412" rx="12" fill="none" stroke="${accent}" stroke-width="4" opacity="0.86"/>
+    <rect width="320" height="460" fill="url(#g)"/>
+    <rect x="22" y="24" width="276" height="412" fill="none" stroke="${accent}" stroke-width="4" opacity="0.86"/>
     <circle cx="244" cy="86" r="42" fill="${accent}" opacity="0.75"/>
     <path d="M34 314 C90 254 128 354 188 292 S270 280 296 228 V436 H34 Z" fill="${accent}" opacity="0.34"/>
     <text x="34" y="76" fill="#fff8df" font-family="Georgia, serif" font-size="24" font-weight="700">${title}</text>
@@ -210,7 +210,7 @@ function generatedMovie(countryCode: string, countryName: string, localIndex: nu
     countryName,
     year,
     posterUrl: poster(title, year, globalIndex),
-    summary: `A generated ${countryName} sample film used to stress test dense poster placement, stable ordering, and layout transitions on the globe.`,
+    summary: `A generated ${countryName} sample film used to stress test dense movie placement, stable ordering, and layout transitions on the globe.`,
     genres: [...genres],
     rating,
     runtime
