@@ -111,6 +111,7 @@ function GlobeScene<TPayload>({
   const controlsRef = useRef<ComponentRef<typeof OrbitControls>>(null);
   const globeGroupRef = useRef<THREE.Group>(null);
   const targetCameraPositionRef = useRef<THREE.Vector3 | null>(null);
+  const lastFocusedCountryIdRef = useRef<string | null>(null);
   const pointerDownPositionRef = useRef<{ x: number; y: number } | null>(null);
   const pointerDraggingRef = useRef(false);
   const [internalHoveredCountry, setInternalHoveredCountry] = useState<CountryFeature | null>(null);
@@ -206,9 +207,15 @@ function GlobeScene<TPayload>({
 
   useEffect(() => {
     if (!focusedCountryId) {
+      lastFocusedCountryIdRef.current = null;
       return;
     }
 
+    if (lastFocusedCountryIdRef.current === focusedCountryId) {
+      return;
+    }
+
+    lastFocusedCountryIdRef.current = focusedCountryId;
     const country = countries.find((item) => item.id === focusedCountryId);
     focusCountry(country ?? null, false);
   }, [countries, focusCountry, focusedCountryId]);
@@ -335,7 +342,7 @@ export function InteractiveGlobe<TPayload>(props: GlobeCoreProps<TPayload>) {
   return (
     <Canvas
       camera={{ position: [0, 0, 4.8], fov: 42 }}
-      dpr={[1, 1.5]}
+      dpr={[1, 2]}
       gl={{ antialias: false, alpha: true, powerPreference: "high-performance" }}
     >
       <color attach="background" args={["#050709"]} />

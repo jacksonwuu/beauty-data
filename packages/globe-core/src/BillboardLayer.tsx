@@ -99,6 +99,13 @@ const BASE_POSTER_WORLD_HEIGHT = 0.15;
 const HIDE_EDGE_FACING_SCORE = 0.2;
 const SHOW_EDGE_FACING_SCORE = 0.28;
 
+interface PosterTextureCacheEntry {
+  texture?: THREE.Texture;
+  promise?: Promise<THREE.Texture>;
+}
+
+const posterTextureCache = new Map<string, PosterTextureCacheEntry>();
+
 function fallbackColor(id: string) {
   const hue = Array.from(id).reduce((sum, character) => sum + character.charCodeAt(0), 0) % 360;
   return `hsl(${hue} 72% 58%)`;
@@ -106,11 +113,53 @@ function fallbackColor(id: string) {
 
 function configurePosterTexture(texture: THREE.Texture, gl: THREE.WebGLRenderer) {
   texture.colorSpace = THREE.SRGBColorSpace;
-  texture.anisotropy = Math.min(4, gl.capabilities.getMaxAnisotropy());
+  texture.anisotropy = Math.min(8, gl.capabilities.getMaxAnisotropy());
   texture.minFilter = THREE.LinearFilter;
   texture.magFilter = THREE.LinearFilter;
   texture.generateMipmaps = false;
   texture.needsUpdate = true;
+}
+
+function getCachedPosterTexture(imageUrl: string) {
+  return posterTextureCache.get(imageUrl)?.texture ?? null;
+}
+
+function loadPosterTexture(imageUrl: string, gl: THREE.WebGLRenderer) {
+  const cachedEntry = posterTextureCache.get(imageUrl);
+
+  if (cachedEntry?.texture) {
+    return Promise.resolve(cachedEntry.texture);
+  }
+
+  if (cachedEntry?.promise) {
+    return cachedEntry.promise;
+  }
+
+  const loader = new THREE.TextureLoader();
+  loader.setCrossOrigin("anonymous");
+
+  const entry: PosterTextureCacheEntry = {};
+  const promise = new Promise<THREE.Texture>((resolve, reject) => {
+    loader.load(
+      imageUrl,
+      (loadedTexture) => {
+        configurePosterTexture(loadedTexture, gl);
+        entry.texture = loadedTexture;
+        entry.promise = undefined;
+        resolve(loadedTexture);
+      },
+      undefined,
+      (error) => {
+        posterTextureCache.delete(imageUrl);
+        reject(error);
+      }
+    );
+  });
+
+  entry.promise = promise;
+  posterTextureCache.set(imageUrl, entry);
+
+  return promise;
 }
 
 function makePosterPlaceholderTexture(id: string) {
@@ -732,42 +781,106 @@ function PosterCardMesh<TPayload>({
 }: PosterCardMeshProps<TPayload>) {
   const cardRef = useRef<THREE.Group>(null);
   const { gl } = useThree();
-  const [texture, setTexture] = useState<THREE.Texture>(() =>
-    makePosterPlaceholderTexture(item.id)
+  const placeholderTextureRef = useRef<THREE.Texture | null>(null);
+
+  const [texture, setTexture] = useState<THREE.Texture | null>(() =>
+    getCachedPosterTexture(imageUrl)
   );
+
+  useEffect(() => {
+    let active = true;
+
+    const cachedTexture = getCachedPosterTexture(imageUrl);
+
+    if (cachedTexture) {
+      setTexture(cachedTexture);
+      return () => {
+        active = false;
+      };
+    }
+
+    const placeholderTexture = makePosterPlaceholderTexture(item.id);
+    placeholderTextureRef.current = placeholderTexture;
+    setTexture(placeholderTexture);
+
+    loadPosterTexture(imageUrl, gl)
+      .then((loadedTexture) => {
+        if (!active) {
+          return;
+        }
+
+        setTexture(loadedTexture);
+
+        if (placeholderTextureRef.current === placeholderTexture) {
+          placeholderTexture.dispose();
+          placeholderTextureRef.current = null;
+        }
+      })
+      .catch(() => {
+        // 保留 placeholder，不需要再创建一个
+      });
+
+    return () => {
+      active = false;
+
+      if (placeholderTextureRef.current === placeholderTexture) {
+        placeholderTexture.dispose();
+        placeholderTextureRef.current = null;
+      }
+    };
+  }, [gl, imageUrl, item.id]);
   const [hovered, setHovered] = useState(false);
   const raised = selected || hovered;
   const renderOrder = raised ? 1200 : stackIndex;
 
   useEffect(() => {
     let active = true;
-    const loader = new THREE.TextureLoader();
-    loader.setCrossOrigin("anonymous");
-    loader.load(
-      imageUrl,
-      (loadedTexture) => {
-        configurePosterTexture(loadedTexture, gl);
+    const cachedTexture = getCachedPosterTexture(imageUrl);
 
+    if (cachedTexture) {
+      setTexture(cachedTexture);
+      return () => {
+        active = false;
+      };
+    }
+
+    loadPosterTexture(imageUrl, gl)
+      .then((loadedTexture) => {
         if (active) {
           setTexture(loadedTexture);
-        } else {
-          loadedTexture.dispose();
         }
-      },
-      undefined,
-      () => {
-        if (active) {
-          setTexture(makePosterPlaceholderTexture(item.id));
+      })
+      .catch(() => {
+        if (!active || placeholderTextureRef.current) {
+          return;
         }
-      }
-    );
+
+        const placeholderTexture = makePosterPlaceholderTexture(item.id);
+        placeholderTextureRef.current = placeholderTexture;
+        setTexture(placeholderTexture);
+      });
 
     return () => {
       active = false;
     };
   }, [gl, imageUrl, item.id]);
 
-  useEffect(() => () => texture.dispose(), [texture]);
+  useEffect(() => {
+    const placeholderTexture = placeholderTextureRef.current;
+
+    if (placeholderTexture && texture !== placeholderTexture) {
+      placeholderTexture.dispose();
+      placeholderTextureRef.current = null;
+    }
+  }, [texture]);
+
+  useEffect(
+    () => () => {
+      placeholderTextureRef.current?.dispose();
+      placeholderTextureRef.current = null;
+    },
+    []
+  );
 
   useLayoutEffect(() => {
     if (!cardRef.current) {
@@ -807,15 +920,6 @@ function PosterCardMesh<TPayload>({
 
   return (
     <group ref={cardRef}>
-      <mesh renderOrder={renderOrder * 2} scale={[1.06, 1.045, 1]} position={[0, 0, -0.003]}>
-        <planeGeometry args={[1, 1]} />
-        <meshBasicMaterial
-          color={selected || hovered ? "#f2b45d" : "#121719"}
-          depthTest={false}
-          depthWrite={false}
-          toneMapped={false}
-        />
-      </mesh>
       <mesh
         renderOrder={renderOrder * 2 + 1}
         onClick={handleClick}
