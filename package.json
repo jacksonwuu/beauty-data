@@ -14,7 +14,9 @@
     "lint:fix": "eslint . --fix",
     "format": "prettier . --write",
     "format:check": "prettier . --check",
-    "check": "pnpm typecheck && pnpm lint && pnpm format:check && pnpm build"
+    "check": "pnpm typecheck && pnpm lint && pnpm format:check && pnpm build",
+    "build:public": "pnpm --filter movie-map build:public",
+    "vercel-build": "pnpm --filter movie-map build:public"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",

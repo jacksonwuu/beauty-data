@@ -1,0 +1,11 @@
+# Public build output (deployed from `vite build` with VITE_PUBLIC_DATA=1)
+dist-public/
+
+# Scraped artwork, the raw Douban dump and their generated intermediates are
+# not redistributed. Run the scripts in /scripts to rebuild them locally.
+public/posters/
+public/posters-atlas/
+public/movie-details/
+data/*.csv
+src/data/posterManifest.json
+src/data/posterAtlas.json

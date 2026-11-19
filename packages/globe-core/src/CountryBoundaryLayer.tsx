@@ -2,7 +2,6 @@ import { useFrame } from "@react-three/fiber";
 import { useEffect, useMemo, useRef, useState } from "react";
 import * as THREE from "three";
 import { makeCountryLinePoints } from "./geo";
-import { makeCountryHighlightTexture } from "./globeTexture";
 import type { CountryFeature } from "./types";
 
 interface CountryBoundaryLayerProps {
@@ -12,6 +11,60 @@ interface CountryBoundaryLayerProps {
 }
 
 const FOCUS_PULSE_DURATION = 2.4;
+const HOVER_FILL_RADIUS = 2.004;
+
+/**
+ * Solid fill for one country, built from its rings directly.
+ *
+ * The previous version rasterised the country into a 4096x2048 canvas on every
+ * hover change, which allocated ~32 MB and re-uploaded a texture each time the
+ * pointer crossed a border. A triangle mesh from the existing ring data costs a
+ * few thousand vertices instead.
+ */
+function makeCountryFillGeometry(country: CountryFeature) {
+  const positions: number[] = [];
+
+  country.polygons.forEach((ring) => {
+    if (ring.length < 4) {
+      return;
+    }
+
+    const faces = THREE.ShapeUtils.triangulateShape(
+      ring.slice(0, -1).map(([lon, lat]) => new THREE.Vector2(lon, lat)),
+      []
+    );
+    const ringVertices = ring.map(([lon, lat]) => {
+      const phi = THREE.MathUtils.degToRad(90 - lat);
+      const theta = THREE.MathUtils.degToRad(lon + 180);
+      return new THREE.Vector3(
+        -HOVER_FILL_RADIUS * Math.sin(phi) * Math.cos(theta),
+        HOVER_FILL_RADIUS * Math.cos(phi),
+        HOVER_FILL_RADIUS * Math.sin(phi) * Math.sin(theta)
+      );
+    });
+
+    faces.forEach(([a, b, c]) => {
+      const first = ringVertices[a];
+      const second = ringVertices[b];
+      const third = ringVertices[c];
+
+      if (!first || !second || !third) {
+        return;
+      }
+
+      // Rings that cross the antimeridian produce degenerate slivers; skip them.
+      if (Math.abs(second.x - first.x) + Math.abs(third.x - first.x) > HOVER_FILL_RADIUS) {
+        return;
+      }
+
+      positions.push(first.x, first.y, first.z, second.x, second.y, second.z, third.x, third.y, third.z);
+    });
+  });
+
+  const geometry = new THREE.BufferGeometry();
+  geometry.setAttribute("position", new THREE.BufferAttribute(new Float32Array(positions), 3));
+  return geometry;
+}
 
 export function CountryBoundaryLayer({
   countries,
@@ -36,15 +89,22 @@ export function CountryBoundaryLayer({
     return geometry;
   }, [countries]);
 
-  const hoverTexture = useMemo(() => {
+  const hoverFillGeometry = useMemo(() => {
     const country = countries.find((item) => item.id === hoveredCountryId);
 
     if (!country) {
       return null;
     }
 
-    return makeCountryHighlightTexture(country);
+    return makeCountryFillGeometry(country);
   }, [countries, hoveredCountryId]);
+
+  useEffect(
+    () => () => {
+      hoverFillGeometry?.dispose();
+    },
+    [hoverFillGeometry]
+  );
 
   const focusedGeometry = useMemo(() => {
     const country = countries.find((item) => item.id === focusedCountryId);
@@ -97,15 +157,15 @@ export function CountryBoundaryLayer({
           toneMapped={false}
         />
       </lineSegments>
-      {hoverTexture ? (
-        <mesh scale={1.0015}>
-          <sphereGeometry args={[2, 72, 72]} />
+      {hoverFillGeometry ? (
+        <mesh geometry={hoverFillGeometry} renderOrder={3}>
           <meshBasicMaterial
-            map={hoverTexture}
+            color="#45f3c7"
             transparent
             opacity={0.22}
-            side={THREE.FrontSide}
+            side={THREE.DoubleSide}
             depthWrite={false}
+            toneMapped={false}
           />
         </mesh>
       ) : null}

@@ -1,3 +1,5 @@
+import type { PosterAtlas, PosterAtlasLookup } from "./posterAtlas";
+
 export type CountryCoordinateMap = Record<string, { lat: number; lon: number }>;
 export type GlobeBillboardLayoutMode = "standing" | "flat";
 export type GlobeBillboardPlacementMode = "rows" | "spread";
@@ -31,6 +33,8 @@ export interface GlobeCoreProps<TPayload = unknown> {
   enableGlobeShading?: boolean;
   enableAtmosphere?: boolean;
   showBacksideBillboards?: boolean;
+  posterAtlas?: PosterAtlas | null;
+  posterLookup?: PosterAtlasLookup | null;
   polarAngleLimit?: number;
   onCountryHover?: (country: CountryFeature | null) => void;
   onCountryClick?: (country: CountryFeature | null) => void;

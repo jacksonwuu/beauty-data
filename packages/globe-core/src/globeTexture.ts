@@ -117,21 +117,3 @@ export function makeGlobeTexture(countries: CountryFeature[]) {
 
   return makeCanvasTexture(canvas);
 }
-
-export function makeCountryHighlightTexture(country: CountryFeature) {
-  const canvas = document.createElement("canvas");
-  canvas.width = TEXTURE_WIDTH;
-  canvas.height = TEXTURE_HEIGHT;
-
-  const context = canvas.getContext("2d");
-
-  if (!context) {
-    return null;
-  }
-
-  context.clearRect(0, 0, TEXTURE_WIDTH, TEXTURE_HEIGHT);
-  context.fillStyle = "#45f3c7";
-  drawCountryRings(context, country);
-
-  return makeCanvasTexture(canvas);
-}

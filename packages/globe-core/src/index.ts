@@ -11,6 +11,19 @@ export {
   vector3ToLatLon
 } from "./geo";
 export { InteractiveGlobe } from "./InteractiveGlobe";
+export {
+  clearPosterMaterialCache,
+  createPosterAtlasLookup,
+  getCachedPosterMaterial,
+  loadPosterMaterial
+} from "./posterAtlas";
+export type {
+  PosterAtlas,
+  PosterAtlasCell,
+  PosterAtlasLookup,
+  PosterAtlasPage,
+  PosterUvRect
+} from "./posterAtlas";
 export type {
   CountryCoordinateMap,
   CountryFeature,

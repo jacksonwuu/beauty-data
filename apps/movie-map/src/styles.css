@@ -35,4 +35,29 @@
   canvas:active {
     cursor: grabbing;
   }
+
+  /* Scrollable panels sit on a dark dock; the default light scrollbar reads as
+     a rendering glitch, especially in the poster list. */
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: rgba(246, 240, 223, 0.22) transparent;
+  }
+
+  ::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+  }
+
+  ::-webkit-scrollbar-track {
+    background: transparent;
+  }
+
+  ::-webkit-scrollbar-thumb {
+    border-radius: 999px;
+    background: rgba(246, 240, 223, 0.22);
+  }
+
+  ::-webkit-scrollbar-thumb:hover {
+    background: rgba(246, 240, 223, 0.34);
+  }
 }

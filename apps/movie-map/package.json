@@ -5,11 +5,14 @@
   "type": "module",
   "scripts": {
     "dev": "vite --host 0.0.0.0",
+    "dev:public": "vite --mode public",
     "generate:movies": "node scripts/generate-movies.mjs",
     "posters:download": "node scripts/download-posters.mjs",
+    "posters:atlas": "python3 scripts/build-poster-atlas.py",
     "typecheck": "tsc --noEmit",
     "build": "tsc --noEmit && vite build",
-    "preview": "vite preview --host 0.0.0.0"
+    "preview": "vite preview --host 0.0.0.0",
+    "build:public": "vite build --mode public"
   },
   "dependencies": {
     "@beauty-data/globe-core": "workspace:*",

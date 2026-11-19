@@ -4,6 +4,18 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Movie Map</title>
+    <meta name="description" content="Explore 1200 films from 31 countries on an interactive globe." />
+    <meta name="theme-color" content="#050709" />
+    <!-- The globe paints posters as soon as its texture page arrives, so start it
+         downloading while the JS bundle is still parsing. -->
+    <link rel="preload" href="/posters-atlas/page-0.webp" as="image" type="image/webp" />
+    <style>
+      html,
+      body {
+        margin: 0;
+        background: #050709;
+      }
+    </style>
   </head>
   <body>
     <div id="root"></div>

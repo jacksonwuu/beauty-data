@@ -1,9 +1,17 @@
-import { Billboard } from "@react-three/drei";
 import { ThreeEvent, useFrame, useThree } from "@react-three/fiber";
-import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import * as THREE from "three";
 import { countryIdToAlpha2 } from "./countryCodes";
 import { latLonToVector3, vector3ToLatLon } from "./geo";
+import {
+  createPosterAtlasLookup,
+  getCachedPosterMaterial,
+  getPosterPlaceholderMaterial,
+  loadPosterMaterial,
+  type PosterAtlas,
+  type PosterAtlasLookup,
+  type PosterUvRect
+} from "./posterAtlas";
 import type {
   CountryCoordinateMap,
   CountryFeature,
@@ -22,6 +30,8 @@ interface BillboardLayerProps<TPayload> {
   billboardLayout?: GlobeBillboardLayoutMode;
   billboardPlacement?: GlobeBillboardPlacementMode;
   showBacksideBillboards?: boolean;
+  posterAtlas?: PosterAtlas | null;
+  posterLookup?: PosterAtlasLookup | null;
   onItemHover?: (
     item: GlobeBillboardItem<TPayload> | null,
     event?: { clientX: number; clientY: number }
@@ -39,7 +49,8 @@ interface BillboardItemProps<TPayload> {
   countryActive: boolean;
   selected: boolean;
   billboardScale: number;
-  showBacksideBillboards: boolean;
+  posterUv?: PosterUvRect;
+  registerItem: (itemId: string, record: BillboardCardRecord) => () => void;
   onItemHover?: (
     item: GlobeBillboardItem<TPayload> | null,
     event?: { clientX: number; clientY: number }
@@ -47,14 +58,25 @@ interface BillboardItemProps<TPayload> {
   onItemClick?: (item: GlobeBillboardItem<TPayload>) => void;
 }
 
+/** Everything the shared per-frame loop needs for one card. */
+interface BillboardCardRecord {
+  group: THREE.Group;
+  card: THREE.Group;
+  normal: THREE.Vector3;
+  flat: boolean;
+  facing: boolean;
+}
+
 interface PosterCardMeshProps<TPayload> {
   item: GlobeBillboardItem<TPayload>;
-  imageUrl: string;
+  materialSrc: string;
+  posterUv?: PosterUvRect;
   autoScale: number;
   stackIndex: number;
   countryActive: boolean;
   selected: boolean;
   billboardScale: number;
+  cardRef: React.RefObject<THREE.Group | null>;
   onItemHover?: (
     item: GlobeBillboardItem<TPayload> | null,
     event?: { clientX: number; clientY: number }
@@ -98,87 +120,6 @@ const TARGET_AREA_PER_MOVIE = 5.8;
 const BASE_POSTER_WORLD_HEIGHT = 0.15;
 const HIDE_EDGE_FACING_SCORE = 0.2;
 const SHOW_EDGE_FACING_SCORE = 0.28;
-
-interface PosterTextureCacheEntry {
-  texture?: THREE.Texture;
-  promise?: Promise<THREE.Texture>;
-}
-
-const posterTextureCache = new Map<string, PosterTextureCacheEntry>();
-
-function fallbackColor(id: string) {
-  const hue = Array.from(id).reduce((sum, character) => sum + character.charCodeAt(0), 0) % 360;
-  return `hsl(${hue} 72% 58%)`;
-}
-
-function configurePosterTexture(texture: THREE.Texture, gl: THREE.WebGLRenderer) {
-  texture.colorSpace = THREE.SRGBColorSpace;
-  texture.anisotropy = Math.min(8, gl.capabilities.getMaxAnisotropy());
-  texture.minFilter = THREE.LinearFilter;
-  texture.magFilter = THREE.LinearFilter;
-  texture.generateMipmaps = false;
-  texture.needsUpdate = true;
-}
-
-function getCachedPosterTexture(imageUrl: string) {
-  return posterTextureCache.get(imageUrl)?.texture ?? null;
-}
-
-function loadPosterTexture(imageUrl: string, gl: THREE.WebGLRenderer) {
-  const cachedEntry = posterTextureCache.get(imageUrl);
-
-  if (cachedEntry?.texture) {
-    return Promise.resolve(cachedEntry.texture);
-  }
-
-  if (cachedEntry?.promise) {
-    return cachedEntry.promise;
-  }
-
-  const loader = new THREE.TextureLoader();
-  loader.setCrossOrigin("anonymous");
-
-  const entry: PosterTextureCacheEntry = {};
-  const promise = new Promise<THREE.Texture>((resolve, reject) => {
-    loader.load(
-      imageUrl,
-      (loadedTexture) => {
-        configurePosterTexture(loadedTexture, gl);
-        entry.texture = loadedTexture;
-        entry.promise = undefined;
-        resolve(loadedTexture);
-      },
-      undefined,
-      (error) => {
-        posterTextureCache.delete(imageUrl);
-        reject(error);
-      }
-    );
-  });
-
-  entry.promise = promise;
-  posterTextureCache.set(imageUrl, entry);
-
-  return promise;
-}
-
-function makePosterPlaceholderTexture(id: string) {
-  const canvas = document.createElement("canvas");
-  const context = canvas.getContext("2d");
-  canvas.width = 64;
-  canvas.height = 92;
-
-  if (context) {
-    context.fillStyle = fallbackColor(id);
-    context.fillRect(0, 0, canvas.width, canvas.height);
-    context.fillStyle = "rgba(5, 7, 9, 0.45)";
-    context.fillRect(7, 7, canvas.width - 14, canvas.height - 14);
-  }
-
-  const texture = new THREE.CanvasTexture(canvas);
-  texture.colorSpace = THREE.SRGBColorSpace;
-  return texture;
-}
 
 function setCanvasCursor(cursor: string) {
   const canvas = document.querySelector("canvas");
@@ -770,117 +711,72 @@ function standingQuaternion(normal: THREE.Vector3, east: THREE.Vector3, north: T
 
 function PosterCardMesh<TPayload>({
   item,
-  imageUrl,
+  materialSrc,
+  posterUv,
   autoScale,
   stackIndex,
   countryActive,
   selected,
   billboardScale,
+  cardRef,
   onItemHover,
   onItemClick
 }: PosterCardMeshProps<TPayload>) {
-  const cardRef = useRef<THREE.Group>(null);
   const { gl } = useThree();
-  const placeholderTextureRef = useRef<THREE.Texture | null>(null);
-
-  const [texture, setTexture] = useState<THREE.Texture | null>(() =>
-    getCachedPosterTexture(imageUrl)
+  const [material, setMaterial] = useState<THREE.MeshBasicMaterial>(
+    () => getCachedPosterMaterial(materialSrc) ?? getPosterPlaceholderMaterial()
   );
+  const [hovered, setHovered] = useState(false);
 
+  // One shared material per texture page: all 1200 cards point at the same
+  // texture, so this effect resolves immediately after the first card.
   useEffect(() => {
     let active = true;
 
-    const cachedTexture = getCachedPosterTexture(imageUrl);
+    const cachedMaterial = getCachedPosterMaterial(materialSrc);
 
-    if (cachedTexture) {
-      setTexture(cachedTexture);
-      return () => {
-        active = false;
-      };
+    if (cachedMaterial) {
+      setMaterial(cachedMaterial);
+      return;
     }
 
-    const placeholderTexture = makePosterPlaceholderTexture(item.id);
-    placeholderTextureRef.current = placeholderTexture;
-    setTexture(placeholderTexture);
-
-    loadPosterTexture(imageUrl, gl)
-      .then((loadedTexture) => {
-        if (!active) {
-          return;
-        }
-
-        setTexture(loadedTexture);
-
-        if (placeholderTextureRef.current === placeholderTexture) {
-          placeholderTexture.dispose();
-          placeholderTextureRef.current = null;
+    setMaterial(getPosterPlaceholderMaterial());
+    loadPosterMaterial(materialSrc, gl)
+      .then((loadedMaterial) => {
+        if (active) {
+          setMaterial(loadedMaterial);
         }
       })
       .catch(() => {
-        // 保留 placeholder，不需要再创建一个
+        // 加载失败时保留占位材质
       });
 
     return () => {
       active = false;
-
-      if (placeholderTextureRef.current === placeholderTexture) {
-        placeholderTexture.dispose();
-        placeholderTextureRef.current = null;
-      }
     };
-  }, [gl, imageUrl, item.id]);
-  const [hovered, setHovered] = useState(false);
+  }, [gl, materialSrc]);
+
+  // Atlas cells are addressed purely through UVs, so each card reuses the same
+  // unit plane geometry instead of loading its own texture.
+  const geometry = useMemo(() => {
+    const plane = new THREE.PlaneGeometry(1, 1);
+
+    if (posterUv) {
+      const uv = plane.attributes.uv as THREE.BufferAttribute;
+      uv.setXY(0, posterUv.u0, posterUv.v1);
+      uv.setXY(1, posterUv.u1, posterUv.v1);
+      uv.setXY(2, posterUv.u0, posterUv.v0);
+      uv.setXY(3, posterUv.u1, posterUv.v0);
+      uv.needsUpdate = true;
+    }
+
+    return plane;
+  }, [posterUv]);
+
+  useEffect(() => () => geometry.dispose(), [geometry]);
+
   const raised = selected || hovered;
   const renderOrder = raised ? 1200 : stackIndex;
-
-  useEffect(() => {
-    let active = true;
-    const cachedTexture = getCachedPosterTexture(imageUrl);
-
-    if (cachedTexture) {
-      setTexture(cachedTexture);
-      return () => {
-        active = false;
-      };
-    }
-
-    loadPosterTexture(imageUrl, gl)
-      .then((loadedTexture) => {
-        if (active) {
-          setTexture(loadedTexture);
-        }
-      })
-      .catch(() => {
-        if (!active || placeholderTextureRef.current) {
-          return;
-        }
-
-        const placeholderTexture = makePosterPlaceholderTexture(item.id);
-        placeholderTextureRef.current = placeholderTexture;
-        setTexture(placeholderTexture);
-      });
-
-    return () => {
-      active = false;
-    };
-  }, [gl, imageUrl, item.id]);
-
-  useEffect(() => {
-    const placeholderTexture = placeholderTextureRef.current;
-
-    if (placeholderTexture && texture !== placeholderTexture) {
-      placeholderTexture.dispose();
-      placeholderTextureRef.current = null;
-    }
-  }, [texture]);
-
-  useEffect(
-    () => () => {
-      placeholderTextureRef.current?.dispose();
-      placeholderTextureRef.current = null;
-    },
-    []
-  );
 
   useLayoutEffect(() => {
     if (!cardRef.current) {
@@ -892,9 +788,17 @@ function PosterCardMesh<TPayload>({
 
     cardRef.current.scale.set(worldHeight * (36 / 52), worldHeight, 1);
     cardRef.current.position.z = selected ? 0.052 : hovered ? 0.064 : 0.04;
-  }, [autoScale, billboardScale, countryActive, hovered, selected]);
+  }, [autoScale, billboardScale, cardRef, countryActive, hovered, selected]);
+
+  // Cards facing away are hidden by the layer's frame loop; ignore events that
+  // still reach them.
+  const isInteractive = () => cardRef.current?.visible !== false;
 
   const handlePointerEnter = (event: ThreeEvent<PointerEvent>) => {
+    if (!isInteractive()) {
+      return;
+    }
+
     event.stopPropagation();
     setHovered(true);
     setCanvasCursor("pointer");
@@ -902,6 +806,10 @@ function PosterCardMesh<TPayload>({
   };
 
   const handlePointerMove = (event: ThreeEvent<PointerEvent>) => {
+    if (!isInteractive()) {
+      return;
+    }
+
     event.stopPropagation();
     onItemHover?.(item, pointerClientPosition(event));
   };
@@ -914,6 +822,10 @@ function PosterCardMesh<TPayload>({
   };
 
   const handleClick = (event: ThreeEvent<MouseEvent>) => {
+    if (!isInteractive()) {
+      return;
+    }
+
     event.stopPropagation();
     onItemClick?.(item);
   };
@@ -921,22 +833,15 @@ function PosterCardMesh<TPayload>({
   return (
     <group ref={cardRef}>
       <mesh
+        geometry={geometry}
+        material={material}
         renderOrder={renderOrder * 2 + 1}
         onClick={handleClick}
         onPointerDown={(event) => event.stopPropagation()}
         onPointerEnter={handlePointerEnter}
         onPointerMove={handlePointerMove}
         onPointerLeave={handlePointerLeave}
-      >
-        <planeGeometry args={[1, 1]} />
-        <meshBasicMaterial
-          map={texture}
-          side={THREE.DoubleSide}
-          depthTest={false}
-          depthWrite={false}
-          toneMapped={false}
-        />
-      </mesh>
+      />
     </group>
   );
 }
@@ -1098,91 +1003,75 @@ function BillboardItem<TPayload>({
   countryActive,
   selected,
   billboardScale,
-  showBacksideBillboards,
+  posterUv,
+  registerItem,
   onItemHover,
   onItemClick
 }: BillboardItemProps<TPayload>) {
   const groupRef = useRef<THREE.Group>(null);
-  const worldPositionRef = useRef(new THREE.Vector3());
-  const cameraDirectionRef = useRef(new THREE.Vector3());
-  const [frontFacing, setFrontFacing] = useState(true);
-  const handleSelect = (event: ThreeEvent<MouseEvent | PointerEvent>) => {
-    event.stopPropagation();
-    onItemClick?.(item);
-  };
+  const cardRef = useRef<THREE.Group>(null);
 
+  // Registers with the layer's single frame loop, which handles camera-facing
+  // orientation and back-face culling for every card in one pass. The old code
+  // ran one useFrame + React state transition per card.
   useLayoutEffect(() => {
-    if (groupRef.current) {
-      groupRef.current.position.copy(position);
-      groupRef.current.quaternion.copy(quaternion);
-    }
-  }, [position, quaternion]);
+    const group = groupRef.current;
+    const card = cardRef.current;
 
-  useFrame(({ camera }) => {
-    if (showBacksideBillboards) {
-      if (!frontFacing) {
-        setFrontFacing(true);
-      }
+    if (!group || !card) {
       return;
     }
 
-    if (!groupRef.current) {
-      return;
-    }
+    group.position.copy(position);
+    group.quaternion.copy(quaternion);
+    card.quaternion.identity();
+    card.visible = true;
 
-    const worldPosition = worldPositionRef.current;
-    groupRef.current.getWorldPosition(worldPosition);
-    const cameraDirection = cameraDirectionRef.current.copy(camera.position).normalize();
-    const itemDirection = worldPosition.normalize();
-    const facingScore = itemDirection.dot(cameraDirection);
-
-    if (frontFacing && facingScore < HIDE_EDGE_FACING_SCORE) {
-      setFrontFacing(false);
-    } else if (!frontFacing && facingScore > SHOW_EDGE_FACING_SCORE) {
-      setFrontFacing(true);
-    }
-  });
-
-  const shouldShowContent = showBacksideBillboards || frontFacing;
-  const card = item.imageUrl ? (
-    <PosterCardMesh
-      item={item}
-      imageUrl={item.imageUrl}
-      autoScale={autoScale}
-      stackIndex={stackIndex}
-      countryActive={countryActive}
-      selected={selected}
-      billboardScale={billboardScale}
-      onItemHover={onItemHover}
-      onItemClick={onItemClick}
-    />
-  ) : null;
+    return registerItem(item.id, {
+      group,
+      card,
+      normal: position.clone().normalize(),
+      flat: layoutMode === "flat",
+      facing: true
+    });
+  }, [item.id, layoutMode, position, quaternion, registerItem]);
 
   return (
     <group ref={groupRef}>
-      {shouldShowContent && layoutMode === "flat" ? (
-        <Billboard follow lockX={false} lockY={false} lockZ={false}>
-          {card}
-        </Billboard>
-      ) : shouldShowContent ? (
-        card
-      ) : null}
-      {shouldShowContent && !item.imageUrl ? (
-        <mesh
-          onClick={handleSelect}
-          onPointerDown={handleSelect}
-          scale={selected ? [0.32, 0.44, 1] : [0.23, 0.32, 1]}
-        >
-          <planeGeometry />
-          <meshBasicMaterial
-            color={fallbackColor(item.id)}
-            depthTest={false}
-            side={THREE.DoubleSide}
-          />
-        </mesh>
-      ) : null}
+      <PosterCardMesh
+        item={item}
+        materialSrc={posterUv?.src ?? item.imageUrl ?? ""}
+        posterUv={posterUv}
+        autoScale={autoScale}
+        stackIndex={stackIndex}
+        countryActive={countryActive}
+        selected={selected}
+        billboardScale={billboardScale}
+        cardRef={cardRef}
+        onItemHover={onItemHover}
+        onItemClick={onItemClick}
+      />
     </group>
   );
+}
+
+interface LayoutSlot {
+  position: THREE.Vector3;
+  quaternion: THREE.Quaternion;
+  autoScale: number;
+  stackIndex: number;
+}
+
+const layoutSlotCache = new Map<string, LayoutSlot[]>();
+const LAYOUT_CACHE_LIMIT = 512;
+
+function layoutCacheKey(
+  countryCode: string,
+  count: number,
+  layoutMode: GlobeBillboardLayoutMode,
+  placementMode: GlobeBillboardPlacementMode
+) {
+  return `${countryCode}|${count}|${layoutMode}|${placementMode}`;
 }
 
 export function BillboardLayer<TPayload>({
@@ -1195,10 +1084,28 @@ export function BillboardLayer<TPayload>({
   billboardLayout = "flat",
   billboardPlacement = "rows",
   showBacksideBillboards = false,
+  posterAtlas,
+  posterLookup,
   onItemHover,
   onItemClick
 }: BillboardLayerProps<TPayload>) {
   const hoveredCountryCode = countryIdToAlpha2(hoveredCountryId);
+  const cardRecords = useRef(new Map<string, BillboardCardRecord>());
+  const cameraDirection = useRef(new THREE.Vector3());
+
+  const registerItem = useCallback((itemId: string, record: BillboardCardRecord) => {
+    cardRecords.current.set(itemId, record);
+
+    return () => {
+      cardRecords.current.delete(itemId);
+    };
+  }, []);
+
+  const atlasLookup = useMemo(
+    () => posterLookup ?? (posterAtlas ? createPosterAtlasLookup(posterAtlas) : null),
+    [posterAtlas, posterLookup]
+  );
+
   const positionedItems = useMemo(() => {
     const byCountry = new Map<string, Array<GlobeBillboardItem<TPayload>>>();
     const countriesByCode = new Map<string, CountryFeature>();
@@ -1224,38 +1131,94 @@ export function BillboardLayer<TPayload>({
         return [];
       }
 
-      return layoutItemsForCountry(
-        countryItems,
-        coordinate,
-        billboardLayout,
-        billboardPlacement,
-        countriesByCode.get(countryCode)
+      // The layout only depends on how many movies a country has, not on which
+      // ones, so dragging the year slider reuses the previous arrangement.
+      const sortedItems = [...countryItems].sort((first, second) =>
+        first.id.localeCompare(second.id)
       );
+      const cacheKey = layoutCacheKey(
+        countryCode,
+        sortedItems.length,
+        billboardLayout,
+        billboardPlacement
+      );
+      let slots = layoutSlotCache.get(cacheKey);
+
+      if (!slots) {
+        slots = layoutItemsForCountry(
+          sortedItems,
+          coordinate,
+          billboardLayout,
+          billboardPlacement,
+          countriesByCode.get(countryCode)
+        ).map(({ position, quaternion, autoScale, stackIndex }) => ({
+          position,
+          quaternion,
+          autoScale,
+          stackIndex
+        }));
+
+        if (layoutSlotCache.size >= LAYOUT_CACHE_LIMIT) {
+          layoutSlotCache.clear();
+        }
+
+        layoutSlotCache.set(cacheKey, slots);
+      }
+
+      return sortedItems.map((item, index) => ({ item, ...slots[index % slots.length] }));
     });
   }, [billboardLayout, billboardPlacement, countries, countryCoordinates, items]);
+
+  useFrame(({ camera }) => {
+    const direction = cameraDirection.current.copy(camera.position).normalize();
+
+    cardRecords.current.forEach((record) => {
+      if (record.flat) {
+        record.card.quaternion.copy(camera.quaternion);
+      }
+
+      if (showBacksideBillboards) {
+        if (!record.facing) {
+          record.facing = true;
+          record.card.visible = true;
+        }
+
+        return;
+      }
+
+      const score = record.normal.dot(direction);
+      const facing = record.facing
+        ? score > HIDE_EDGE_FACING_SCORE
+        : score > SHOW_EDGE_FACING_SCORE;
+
+      if (facing !== record.facing) {
+        record.facing = facing;
+        record.card.visible = facing;
+      }
+    });
+
+  });
+
   return (
     <>
-      {positionedItems.map(({ item, position, quaternion, autoScale, stackIndex }) => {
-        const selected = item.id === selectedItemId;
-
-        return (
-          <BillboardItem
-            key={item.id}
-            item={item}
-            position={position}
-            quaternion={quaternion}
-            layoutMode={billboardLayout}
-            autoScale={autoScale}
-            stackIndex={stackIndex}
-            countryActive={Boolean(hoveredCountryCode && item.countryCode === hoveredCountryCode)}
-            selected={selected}
-            billboardScale={billboardScale}
-            showBacksideBillboards={showBacksideBillboards}
-            onItemHover={onItemHover}
-            onItemClick={onItemClick}
-          />
-        );
-      })}
+      {positionedItems.map(({ item, position, quaternion, autoScale, stackIndex }) => (
+        <BillboardItem
+          key={item.id}
+          item={item}
+          position={position}
+          quaternion={quaternion}
+          layoutMode={billboardLayout}
+          autoScale={autoScale}
+          stackIndex={stackIndex}
+          countryActive={Boolean(hoveredCountryCode && item.countryCode === hoveredCountryCode)}
+          selected={item.id === selectedItemId}
+          billboardScale={billboardScale}
+          posterUv={atlasLookup?.(item.id)}
+          registerItem={registerItem}
+          onItemHover={onItemHover}
+          onItemClick={onItemClick}
+        />
+      ))}
     </>
   );
 }

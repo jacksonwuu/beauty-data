@@ -175,7 +175,7 @@ const NUMERIC_TO_ALPHA2: Record<string, string> = {
   "894": "ZM"
 };
 
-function alpha2ToFlag(alpha2: string) {
+export function alpha2ToFlag(alpha2: string) {
   return alpha2
     .toUpperCase()
     .replace(/./g, (char) => String.fromCodePoint(127397 + char.charCodeAt(0)));

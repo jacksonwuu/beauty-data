@@ -80,7 +80,7 @@ function AtmosphereLayer() {
 
   return (
     <mesh scale={1.12} renderOrder={1}>
-      <sphereGeometry args={[GLOBE_RADIUS, 112, 112]} />
+      <sphereGeometry args={[GLOBE_RADIUS, 64, 64]} />
       <primitive object={atmosphereMaterial} ref={materialRef} attach="material" />
     </mesh>
   );
@@ -101,6 +101,8 @@ function GlobeScene<TPayload>({
   enableGlobeShading = false,
   enableAtmosphere = true,
   showBacksideBillboards = false,
+  posterAtlas = null,
+  posterLookup = null,
   polarAngleLimit = 0.16,
   onCountryHover,
   onCountryClick,
@@ -119,13 +121,13 @@ function GlobeScene<TPayload>({
   const countries = useMemo(() => WORLD_COUNTRIES, []);
   const globeTexture = useMemo(() => makeGlobeTexture(countries), [countries]);
 
-  const setCanvasCursor = (cursor: string) => {
+  const setCanvasCursor = useCallback((cursor: string) => {
     const canvas = document.querySelector("canvas");
 
-    if (canvas instanceof HTMLCanvasElement) {
+    if (canvas instanceof HTMLCanvasElement && canvas.style.cursor !== cursor) {
       canvas.style.cursor = cursor;
     }
-  };
+  }, []);
 
   const findCountryFromPoint = (point: THREE.Vector3) => {
     const localPoint = point.clone();
@@ -135,6 +137,13 @@ function GlobeScene<TPayload>({
   };
 
   useFrame(() => {
+    const pendingPointer = pendingPointerRef.current;
+
+    if (pendingPointer) {
+      pendingPointerRef.current = null;
+      resolveHoveredCountry(pendingPointer);
+    }
+
     const targetCameraPosition = targetCameraPositionRef.current;
 
     if (!targetCameraPosition) {
@@ -154,21 +163,36 @@ function GlobeScene<TPayload>({
     }
   });
 
-  const updateHoveredCountry = (event: ThreeEvent<PointerEvent>) => {
-    const country = findCountryFromPoint(event.point);
+  // Pointer moves arrive faster than frames; keep only the latest point and
+  // resolve the country once per frame instead of once per event.
+  const pendingPointerRef = useRef<THREE.Vector3 | null>(null);
+  const lastResolvedCountryIdRef = useRef<string | null>(null);
 
-    if (country?.id !== internalHoveredCountry?.id) {
+  const resolveHoveredCountry = useCallback((localPoint: THREE.Vector3) => {
+    const { lat, lon } = vector3ToLatLon(localPoint);
+    const country = findCountryAtLatLon(lat, lon, countries);
+    const nextId = country?.id ?? null;
+
+    if (nextId !== lastResolvedCountryIdRef.current) {
+      lastResolvedCountryIdRef.current = nextId;
       setInternalHoveredCountry(country);
       onCountryHover?.(country);
+      setCanvasCursor(country ? "pointer" : "grab");
     }
-
-    setCanvasCursor(country ? "pointer" : "grab");
-  };
+  }, [countries, onCountryHover, setCanvasCursor]);
 
   const clearHoveredCountry = () => {
+    pendingPointerRef.current = null;
+    lastResolvedCountryIdRef.current = null;
     setInternalHoveredCountry(null);
     onCountryHover?.(null);
     setCanvasCursor("grab");
+  };
+
+  const updateHoveredCountry = (event: ThreeEvent<PointerEvent>) => {
+    const localPoint = event.point.clone();
+    globeGroupRef.current?.worldToLocal(localPoint);
+    pendingPointerRef.current = localPoint;
   };
 
   const stopProgrammaticCameraMove = () => {
@@ -188,6 +212,8 @@ function GlobeScene<TPayload>({
         return;
       }
 
+      // Read the live camera position instead of capturing it, so the
+      // callback identity stays stable across OrbitControls updates.
       const currentDistance = camera.position.length();
       const distance = THREE.MathUtils.clamp(currentDistance, minCameraDistance, maxCameraDistance);
       const targetPosition = countryCenterVector(country, distance);
@@ -202,7 +228,7 @@ function GlobeScene<TPayload>({
         onCountryClick?.(country);
       }
     },
-    [camera.position, maxCameraDistance, minCameraDistance, onCountryClick, polarAngleLimit]
+    [camera, maxCameraDistance, minCameraDistance, onCountryClick, polarAngleLimit]
   );
 
   useEffect(() => {
@@ -318,6 +344,8 @@ function GlobeScene<TPayload>({
           billboardLayout={billboardLayout}
           billboardPlacement={billboardPlacement}
           showBacksideBillboards={showBacksideBillboards}
+          posterAtlas={posterAtlas}
+          posterLookup={posterLookup}
           onItemHover={handleItemHover}
           onItemClick={onItemClick}
         />
@@ -341,7 +369,7 @@ function GlobeScene<TPayload>({
 export function InteractiveGlobe<TPayload>(props: GlobeCoreProps<TPayload>) {
   return (
     <Canvas
-      camera={{ position: [0, 0, 4.8], fov: 42 }}
+      camera={{ position: [0, 0, 5.65], fov: 42 }}
       dpr={[1, 2]}
       gl={{ antialias: false, alpha: true, powerPreference: "high-performance" }}
     >
