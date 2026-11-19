@@ -12,7 +12,7 @@ const publicData = process.env.VITE_PUBLIC_DATA === "1";
 
 // Shipped to everyone: code, the atlas (2 tiles of typographic cards) and the
 // on-demand detail shards (plot copy). Never the scraped artwork.
-const PUBLIC_ASSETS = ["posters-atlas/**", "movie-details/**", "placeholder.html", "preview.png"];
+const PUBLIC_ASSETS = ["posters-atlas/**", "movie-details/**", "placeholder.svg", "preview.png"];
 
 export default defineConfig(({ mode }) => {
   const publicMode = publicData || mode === "public";

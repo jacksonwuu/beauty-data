@@ -21,4 +21,4 @@ export const lookupPosterCell = posterAtlas ? createPosterAtlasLookup(posterAtla
  * public build, where every scraped image is stripped). Slugless so it also
  * resolves under a sub-path deployment such as GitHub project pages.
  */
-export const publicPlaceholder = PUBLIC_BUILD ? "placeholder.html" : "";
+export const publicPlaceholder = PUBLIC_BUILD ? "placeholder.svg" : "";
