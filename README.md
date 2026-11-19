@@ -4,7 +4,7 @@
 
 一颗可交互的地球，每张海报都是一部电影，落在这部电影的出品国上。拖动时间轴或点播放，看着电影史在球面上生长；点一个国家看它所有的片；点一张海报看故事。
 
-**在线体验：** 部署完成后填这里（Vercel 自动生成）
+**在线体验：<https://jacksonwuu.github.io/beauty-data/>**
 
 ![movie map](docs/screenshot.png)
 
@@ -70,15 +70,20 @@ pnpm build:public     # 输出 apps/movie-map/dist-public，不含任何抓取�
 
 ## 部署
 
-仓库根目录已带 `vercel.json`：
+线上版本跑在 **GitHub Pages**：`gh-pages` 分支存放 `dist-public`，域名 <https://jacksonwuu.github.io/beauty-data/>。
 
 ```bash
-vercel --prod
+pnpm build:public                                        # 或加上 --base /beauty-data/
+cd apps/movie-map/dist-public && git add -A && git commit -m deploy && git push origin gh-pages
 ```
 
-或在 Vercel 里 "Import Git Repository" 选这个仓库即可，构建设置已经写在配置里。
+仓库根目录也带了 `vercel.json`（构建 `pnpm --filter movie-map build:public`，输出 `apps/movie-map/dist-public`），在 Vercel 里 Import 这个仓库即可一键部署到自有域名。任何静态托管同理。
 
-任何静态托管（Cloudflare Pages / Netlify / GitHub Pages）都可以，构建命令 `pnpm --filter movie-map build:public`，输出目录 `apps/movie-map/dist-public`。
+### 更新线上
+
+```bash
+pnpm build:public && rsync -a --delete apps/movie-map/dist-public/ ../deploy/  # 或直接把 dist-public 推到 gh-pages
+```
 
 ## 数据与版权
 
