@@ -12,7 +12,7 @@ const publicData = process.env.VITE_PUBLIC_DATA === "1";
 
 // Shipped to everyone: code, the atlas (2 tiles of typographic cards) and the
 // on-demand detail shards (plot copy). Never the scraped artwork.
-const PUBLIC_ASSETS = ["posters-atlas/**", "movie-details/**"];
+const PUBLIC_ASSETS = ["posters-atlas/**", "movie-details/**", "placeholder.html", "preview.png"];
 
 export default defineConfig(({ mode }) => {
   const publicMode = publicData || mode === "public";
@@ -53,7 +53,7 @@ export default defineConfig(({ mode }) => {
                   continue;
                 }
 
-                if (!PUBLIC_ASSETS.some((allowed) => allowed.startsWith(`${entry.name}/`))) {
+                if (!PUBLIC_ASSETS.some((allowed) => allowed === entry.name || allowed.startsWith(`${entry.name}/`))) {
                   rmSync(join(outDir, entry.name), { recursive: true, force: true });
                 }
               }
