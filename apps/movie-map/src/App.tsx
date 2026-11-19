@@ -21,7 +21,7 @@ import { countryEmoji } from "./data/countryFlags";
 import { movies, searchMovies, type Movie } from "./data/movies";
 import { prefetchMovieDetail } from "./data/movieDetails";
 import { movieRoutes, routeById, routeStops, type MovieRoute } from "./data/routes";
-import { lookupPosterCell, posterAtlas } from "./data/posterAtlas";
+import { lookupPosterCell, posterAtlas, publicPlaceholder } from "./data/posterAtlas";
 import { readUrlState, useUrlStateSync } from "./hooks/useUrlState";
 import { visuallyHiddenClass } from "./ui";
 
@@ -418,7 +418,7 @@ function App() {
         id: movie.id,
         countryCode: movie.countryCode,
         year: movie.year,
-        imageUrl: movie.posterUrl,
+        imageUrl: movie.posterUrl || publicPlaceholder,
         payload: movie
       })),
     [visibleMovies]

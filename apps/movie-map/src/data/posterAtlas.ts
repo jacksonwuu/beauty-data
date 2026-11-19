@@ -15,3 +15,10 @@ const PUBLIC_BUILD = import.meta.env.VITE_PUBLIC_DATA === true;
 export const posterAtlas = PUBLIC_BUILD ? null : (posterAtlasData as unknown as PosterAtlas);
 
 export const lookupPosterCell = posterAtlas ? createPosterAtlasLookup(posterAtlas) : null;
+
+/**
+ * Card art for films without a redistributable poster (always the case in the
+ * public build, where every scraped image is stripped). Slugless so it also
+ * resolves under a sub-path deployment such as GitHub project pages.
+ */
+export const publicPlaceholder = PUBLIC_BUILD ? "placeholder.html" : "";
