@@ -6,7 +6,9 @@
 
 **在线体验：<https://jacksonwuu.github.io/beauty-data/>**
 
-![movie map](docs/screenshot.png)
+![电影地图 · Movie Map](docs/preview.png)
+
+> 分享到 X / Slack / 微信时用的预览图就是上面这张（`public/preview.png`，1200×630，由 `scripts/compose-preview.py` 从真实截图合成）。`docs/screenshot.png` 则是完整界面截图。
 
 ## 功能
 
