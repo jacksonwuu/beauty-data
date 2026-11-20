@@ -14,7 +14,6 @@ const publicData = process.env.VITE_PUBLIC_DATA === "1";
 const PUBLIC_ASSETS = [
   "posters/**",
   "posters-web/**",
-  "posters-atlas/**",
   "movie-details/**",
   "placeholder.svg",
   "preview.png"

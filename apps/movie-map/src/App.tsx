@@ -21,7 +21,7 @@ import { countryEmoji } from "./data/countryFlags";
 import { movies, searchMovies, type Movie } from "./data/movies";
 import { prefetchMovieDetail } from "./data/movieDetails";
 import { movieRoutes, routeById, routeStops, type MovieRoute } from "./data/routes";
-import { lookupPosterCell, posterAtlas, publicPlaceholder } from "./data/posterAtlas";
+import { publicPlaceholder } from "./data/posterAtlas";
 import { posterTileAtlas } from "./data/posterWeb";
 import { readUrlState, useUrlStateSync } from "./hooks/useUrlState";
 import { visuallyHiddenClass } from "./ui";
@@ -584,9 +584,7 @@ function App() {
           onCountryClick={handleCountryClick}
           onItemHover={handleItemHover}
           onItemClick={handleItemClick}
-          posterAtlas={posterAtlas}
           posterTileAtlas={posterTileAtlas}
-          posterLookup={lookupPosterCell}
           focusAzimuthOffset={panelOpen && !routesOpen ? 7.5 : 0}
         />
         <p className={visuallyHiddenClass}>
