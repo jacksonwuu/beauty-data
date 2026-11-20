@@ -26,13 +26,22 @@ from PIL import Image, ImageDraw, ImageFont
 APP_ROOT = Path(__file__).resolve().parent.parent
 PUBLIC_DIR = APP_ROOT / "public"
 ATLAS_DIR = PUBLIC_DIR / "posters-atlas"
+POSTERS_DIR = PUBLIC_DIR / "posters"
 DATA_DIR = APP_ROOT / "src" / "data"
 
+# `--tiles` writes the web build's atlas instead: 20x larger cells (a card is
+# ~120 px on screen and can be zoomed to ~460 px, so a 72 px cell went blurry),
+# sliced into 2048x2048 tiles so no single texture exceeds the GPU limit.
 CELL_W = 72
 CELL_H = 108
 GUTTER = 2
 COLUMNS = 40
 CELLS_PER_PAGE = 1200
+TILE_MODE = "--tiles" in sys.argv
+if TILE_MODE:
+    CELL_W, CELL_H, GUTTER = 1440, 2160, 0
+    COLUMNS = 1
+    CELLS_PER_PAGE = 1
 ACTIVE_YEARS = 10
 WEBP_QUALITY = 80
 AVIF_QUALITY = 55
@@ -51,6 +60,15 @@ def load_movies() -> list[dict]:
 
 def load_manifest() -> dict[str, str]:
     return json.loads((DATA_DIR / "posterManifest.json").read_text(encoding="utf-8"))
+
+
+def find_poster(source_id: str) -> Path | None:
+    """The scraper stores covers as `movie-<id>.jpg`, but a few are png/webp."""
+    for suffix in (".jpg", ".png", ".webp"):
+        candidate = POSTERS_DIR / f"movie-{source_id}{suffix}"
+        if candidate.exists():
+            return candidate
+    return None
 
 
 def placeholder_cell() -> Image.Image:

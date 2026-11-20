@@ -12,7 +12,8 @@
     "typecheck": "tsc --noEmit",
     "build": "tsc --noEmit && vite build",
     "preview": "vite preview --host 0.0.0.0",
-    "build:public": "vite build --mode public"
+    "build:public": "vite build --mode public",
+    "posters:web": "python3 scripts/build-web-atlas.py"
   },
   "dependencies": {
     "@beauty-data/globe-core": "workspace:*",

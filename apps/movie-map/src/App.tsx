@@ -22,6 +22,7 @@ import { movies, searchMovies, type Movie } from "./data/movies";
 import { prefetchMovieDetail } from "./data/movieDetails";
 import { movieRoutes, routeById, routeStops, type MovieRoute } from "./data/routes";
 import { lookupPosterCell, posterAtlas, publicPlaceholder } from "./data/posterAtlas";
+import { posterTileAtlas } from "./data/posterWeb";
 import { readUrlState, useUrlStateSync } from "./hooks/useUrlState";
 import { visuallyHiddenClass } from "./ui";
 
@@ -584,6 +585,7 @@ function App() {
           onItemHover={handleItemHover}
           onItemClick={handleItemClick}
           posterAtlas={posterAtlas}
+          posterTileAtlas={posterTileAtlas}
           posterLookup={lookupPosterCell}
         />
         <p className={visuallyHiddenClass}>

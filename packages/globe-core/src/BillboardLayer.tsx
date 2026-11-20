@@ -5,11 +5,14 @@ import { countryIdToAlpha2 } from "./countryCodes";
 import { latLonToVector3, vector3ToLatLon } from "./geo";
 import {
   createPosterAtlasLookup,
+  createPosterTileLookup,
   getCachedPosterMaterial,
   getPosterPlaceholderMaterial,
   loadPosterMaterial,
   type PosterAtlas,
   type PosterAtlasLookup,
+  type PosterAtlasTileAtlas,
+  type PosterTileLookup,
   type PosterUvRect
 } from "./posterAtlas";
 import type {
@@ -32,6 +35,8 @@ interface BillboardLayerProps<TPayload> {
   showBacksideBillboards?: boolean;
   posterAtlas?: PosterAtlas | null;
   posterLookup?: PosterAtlasLookup | null;
+  /** High-resolution, tiled atlas: replaces `posterLookup` when given. */
+  posterTileAtlas?: PosterAtlasTileAtlas | null;
   onItemHover?: (
     item: GlobeBillboardItem<TPayload> | null,
     event?: { clientX: number; clientY: number }
@@ -50,6 +55,7 @@ interface BillboardItemProps<TPayload> {
   selected: boolean;
   billboardScale: number;
   posterUv?: PosterUvRect;
+  posterFineSrc?: string;
   registerItem: (itemId: string, record: BillboardCardRecord) => () => void;
   onItemHover?: (
     item: GlobeBillboardItem<TPayload> | null,
@@ -71,6 +77,8 @@ interface PosterCardMeshProps<TPayload> {
   item: GlobeBillboardItem<TPayload>;
   materialSrc: string;
   posterUv?: PosterUvRect;
+  /** Full-size image for this film; swapped in once the card is large enough. */
+  fineSrc?: string;
   autoScale: number;
   stackIndex: number;
   countryActive: boolean;
@@ -117,6 +125,8 @@ interface PositionedBillboard<TPayload> {
 const MIN_COUNTRY_POSTER_SCALE = 0.62;
 const MAX_COUNTRY_POSTER_SCALE = 1.28;
 const TARGET_AREA_PER_MOVIE = 5.8;
+/** Cards smaller than this (device pixels) keep sampling the tile texture. */
+const FINE_TEXTURE_MIN_PX = 400;
 const BASE_POSTER_WORLD_HEIGHT = 0.15;
 const HIDE_EDGE_FACING_SCORE = 0.2;
 const SHOW_EDGE_FACING_SCORE = 0.28;
@@ -713,6 +723,7 @@ function PosterCardMesh<TPayload>({
   item,
   materialSrc,
   posterUv,
+  fineSrc,
   autoScale,
   stackIndex,
   countryActive,
@@ -722,11 +733,19 @@ function PosterCardMesh<TPayload>({
   onItemHover,
   onItemClick
 }: PosterCardMeshProps<TPayload>) {
-  const { gl } = useThree();
+  const { gl, camera } = useThree();
   const [material, setMaterial] = useState<THREE.MeshBasicMaterial>(
     () => getCachedPosterMaterial(materialSrc) ?? getPosterPlaceholderMaterial()
   );
   const [hovered, setHovered] = useState(false);
+  // Same numbers the layout effect below applies, computed up front so the LOD
+  // check does not have to read the card's transform.
+  const worldHeight =
+    BASE_POSTER_WORLD_HEIGHT *
+    billboardScale *
+    autoScale *
+    (countryActive ? 1.12 : 1) *
+    (selected ? 1.18 : hovered ? 1.24 : 1);
 
   // One shared material per texture page: all 1200 cards point at the same
   // texture, so this effect resolves immediately after the first card.
@@ -756,22 +775,84 @@ function PosterCardMesh<TPayload>({
     };
   }, [gl, materialSrc]);
 
+  // Level of detail: a tile cell (480x720) is sharp up to ~500 px on screen,
+  // so the per-film full-size image is only fetched once the card actually gets
+  // that big (hover boost, zoomed-in country, detail view).
+  const [wantsFine, setWantsFine] = useState(false);
+  const [fineMaterial, setFineMaterial] = useState<THREE.MeshBasicMaterial | null>(null);
+  // Position of this card in world space, refreshed only when the LOD effect runs.
+  const itemPosition = useMemo(() => new THREE.Vector3(), []);
+
+  useEffect(() => {
+    if (!fineSrc) {
+      return;
+    }
+
+    if (cardRef.current) {
+      cardRef.current.getWorldPosition(itemPosition);
+    }
+
+    const distance = camera.position.distanceTo(itemPosition);
+    const fov = "fov" in camera ? camera.fov : 50;
+    const visibleHeight = 2 * distance * Math.tan(THREE.MathUtils.degToRad(fov / 2));
+    const screenPx = (worldHeight / visibleHeight) * gl.domElement.clientHeight;
+
+    if (screenPx * gl.getPixelRatio() > FINE_TEXTURE_MIN_PX) {
+      setWantsFine(true);
+    }
+  }, [billboardScale, autoScale, camera, cardRef, gl, itemPosition, worldHeight]);
+
+  useEffect(() => {
+    if (!wantsFine || !fineSrc) {
+      return;
+    }
+
+    const cached = getCachedPosterMaterial(fineSrc);
+
+    if (cached) {
+      setFineMaterial(cached);
+      return;
+    }
+
+    let active = true;
+    loadPosterMaterial(fineSrc, gl)
+      .then((loaded) => {
+        if (active) {
+          setFineMaterial(loaded);
+        }
+      })
+      .catch(() => {
+        // Keep the tile texture.
+      });
+
+    return () => {
+      active = false;
+    };
+  }, [fineSrc, gl, wantsFine]);
+
+  const fineUv = useMemo<PosterUvRect | undefined>(
+    () => (fineMaterial ? { src: fineSrc ?? "", u0: 0, v0: 0, u1: 1, v1: 1 } : undefined),
+    [fineMaterial, fineSrc]
+  );
+
   // Atlas cells are addressed purely through UVs, so each card reuses the same
   // unit plane geometry instead of loading its own texture.
+  const activeUv = fineUv ?? posterUv;
+
   const geometry = useMemo(() => {
     const plane = new THREE.PlaneGeometry(1, 1);
 
-    if (posterUv) {
+    if (activeUv) {
       const uv = plane.attributes.uv as THREE.BufferAttribute;
-      uv.setXY(0, posterUv.u0, posterUv.v1);
-      uv.setXY(1, posterUv.u1, posterUv.v1);
-      uv.setXY(2, posterUv.u0, posterUv.v0);
-      uv.setXY(3, posterUv.u1, posterUv.v0);
+      uv.setXY(0, activeUv.u0, activeUv.v1);
+      uv.setXY(1, activeUv.u1, activeUv.v1);
+      uv.setXY(2, activeUv.u0, activeUv.v0);
+      uv.setXY(3, activeUv.u1, activeUv.v0);
       uv.needsUpdate = true;
     }
 
     return plane;
-  }, [posterUv]);
+  }, [activeUv]);
 
   useEffect(() => () => geometry.dispose(), [geometry]);
 
@@ -834,7 +915,7 @@ function PosterCardMesh<TPayload>({
     <group ref={cardRef}>
       <mesh
         geometry={geometry}
-        material={material}
+        material={fineMaterial ?? material}
         renderOrder={renderOrder * 2 + 1}
         onClick={handleClick}
         onPointerDown={(event) => event.stopPropagation()}
@@ -1004,6 +1085,7 @@ function BillboardItem<TPayload>({
   selected,
   billboardScale,
   posterUv,
+  posterFineSrc,
   registerItem,
   onItemHover,
   onItemClick
@@ -1042,6 +1124,7 @@ function BillboardItem<TPayload>({
         item={item}
         materialSrc={posterUv?.src ?? item.imageUrl ?? ""}
         posterUv={posterUv}
+        fineSrc={posterFineSrc}
         autoScale={autoScale}
         stackIndex={stackIndex}
         countryActive={countryActive}
@@ -1086,6 +1169,7 @@ export function BillboardLayer<TPayload>({
   showBacksideBillboards = false,
   posterAtlas,
   posterLookup,
+  posterTileAtlas,
   onItemHover,
   onItemClick
 }: BillboardLayerProps<TPayload>) {
@@ -1104,6 +1188,10 @@ export function BillboardLayer<TPayload>({
   const atlasLookup = useMemo(
     () => posterLookup ?? (posterAtlas ? createPosterAtlasLookup(posterAtlas) : null),
     [posterAtlas, posterLookup]
+  );
+  const tileLookup = useMemo(
+    () => (posterTileAtlas ? createPosterTileLookup(posterTileAtlas) : null),
+    [posterTileAtlas]
   );
 
   const positionedItems = useMemo(() => {
@@ -1213,7 +1301,8 @@ export function BillboardLayer<TPayload>({
           countryActive={Boolean(hoveredCountryCode && item.countryCode === hoveredCountryCode)}
           selected={item.id === selectedItemId}
           billboardScale={billboardScale}
-          posterUv={atlasLookup?.(item.id)}
+          posterUv={tileLookup?.(item.id)?.tile ?? atlasLookup?.(item.id)}
+          posterFineSrc={tileLookup?.(item.id)?.fine}
           registerItem={registerItem}
           onItemHover={onItemHover}
           onItemClick={onItemClick}

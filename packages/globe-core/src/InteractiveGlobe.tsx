@@ -103,6 +103,7 @@ function GlobeScene<TPayload>({
   showBacksideBillboards = false,
   posterAtlas = null,
   posterLookup = null,
+  posterTileAtlas = null,
   polarAngleLimit = 0.16,
   onCountryHover,
   onCountryClick,
@@ -346,6 +347,7 @@ function GlobeScene<TPayload>({
           showBacksideBillboards={showBacksideBillboards}
           posterAtlas={posterAtlas}
           posterLookup={posterLookup}
+          posterTileAtlas={posterTileAtlas}
           onItemHover={handleItemHover}
           onItemClick={onItemClick}
         />

@@ -1,13 +1,11 @@
 import posterManifestData from "./posterManifest.json";
 
-// Set by the Vite config for public builds; absent on the dev server so local
-// work still uses the downloaded artwork.
-const PUBLIC_BUILD = import.meta.env.VITE_PUBLIC_DATA === true;
-
-const manifest = posterManifestData as Record<string, string>;
-
 /**
- * Poster file per movie id. The public build ships no scraped artwork, so the
- * whole manifest (and the import above) drops out of that bundle.
+ * Poster file per movie id, e.g. `movie: "/posters/movie-1291546.jpg"`.
+ *
+ * Douban blocks hotlinking (its image hosts answer 418/403), so the public
+ * deployment has to serve the artwork itself — that is why this manifest is
+ * part of every build. Films without a downloaded poster (`""`) fall back to
+ * typographic cards.
  */
-export const posterManifest: Record<string, string> = PUBLIC_BUILD ? {} : manifest;
+export const posterManifest: Record<string, string> = posterManifestData as Record<string, string>;

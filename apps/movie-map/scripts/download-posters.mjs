@@ -13,16 +13,17 @@ const outputDir = path.join(appRoot, "public/posters");
 const concurrency = 8;
 
 function extractRawMovies(source) {
-  const startMarker = "const rawMovies = ";
-  const endMarker = ";\n\nexport const movies";
+  // The array is pretty-printed and followed by a comment block, so slice the
+  // literal itself (up to the closing bracket) instead of guessing at markers.
+  const startMarker = "const rawMovies = [";
   const start = source.indexOf(startMarker);
-  const end = source.indexOf(endMarker, start);
+  const end = start === -1 ? -1 : source.indexOf("\n];", start);
 
   if (start === -1 || end === -1) {
     throw new Error("Could not locate rawMovies in movies.ts");
   }
 
-  return JSON.parse(source.slice(start + startMarker.length, end));
+  return JSON.parse(source.slice(source.indexOf("[", start), end + 2));
 }
 
 function parseCsvLine(line) {
@@ -100,11 +101,13 @@ async function loadImdbIdsBySourceId(movies) {
 
 function proxiedPosterUrl(url) {
   const strippedProtocol = url.replace(/^https?:\/\//, "");
-  return `https://images.weserv.nl/?url=${strippedProtocol}&w=320&h=460&fit=cover`;
+  // The public deployment ships these files, so they are cropped from a
+  // 480x720 source (the globe atlas cell) rather than the old 320px thumb.
+  return `https://images.weserv.nl/?url=${strippedProtocol}&w=480&h=720&fit=cover`;
 }
 
 function resizedImdbImageUrl(url) {
-  return url.replace(/\._V1_.*\.jpg$/i, "._V1_QL75_UX320_.jpg");
+  return url.replace(/\._V1_.*\.jpg$/i, "._V1_QL75_UX480_.jpg");
 }
 
 async function fetchImdbPosterUrls(imdbId) {
@@ -233,7 +236,9 @@ async function main() {
   async function worker(workerIndex) {
     for (let index = workerIndex; index < movies.length; index += concurrency) {
       const movie = movies[index];
-      const existingExtensions = ["jpg", "png", "webp"];
+      // `.webp` first: the atlas script writes a cropped 480x720 webp of every
+      // poster so the globe can zoom without loading a second file.
+      const existingExtensions = ["webp", "jpg", "png"];
       const existing = existingExtensions
         .map((extension) => `/posters/${movie.id}.${extension}`)
         .find((posterPath) => existsSync(path.join(appRoot, "public", posterPath)));

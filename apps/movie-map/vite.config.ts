@@ -4,15 +4,21 @@ import { readdirSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { defineConfig } from "vite";
 
-// The posters and the Douban dump are scraped artwork; keep them out of the
-// public build. `vite --mode public` (or VITE_PUBLIC_DATA=1) blanks the
-// poster manifest and ships the app without any third-party images, so the
-// public deployment only contains our own code plus non-copyrightable facts.
+// `vite --mode public` (or VITE_PUBLIC_DATA=1): same app, but it reads the
+// high-resolution tiled atlas instead of the low-res one, and the output goes
+// to dist-public so a deploy can never pick up the local dev build.
 const publicData = process.env.VITE_PUBLIC_DATA === "1";
 
-// Shipped to everyone: code, the atlas (2 tiles of typographic cards) and the
-// on-demand detail shards (plot copy). Never the scraped artwork.
-const PUBLIC_ASSETS = ["posters-atlas/**", "movie-details/**", "placeholder.svg", "preview.png"];
+// Shipped to everyone: code, poster art, the tiled atlas and the on-demand
+// detail shards.
+const PUBLIC_ASSETS = [
+  "posters/**",
+  "posters-web/**",
+  "posters-atlas/**",
+  "movie-details/**",
+  "placeholder.svg",
+  "preview.png"
+];
 
 export default defineConfig(({ mode }) => {
   const publicMode = publicData || mode === "public";

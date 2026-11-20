@@ -56474,18 +56474,20 @@ const rawMovies = [
   }
 ];
 
-// The scraped poster art is not redistributed in the public build, so the
-// manifest becomes dead code there and Rollup drops the import entirely.
-// Set by the Vite config on `vite build` / `vite --mode public`, and absent
-// from the dev server so local work still shows the downloaded artwork.
-const PUBLIC_BUILD = Boolean(import.meta.env.VITE_PUBLIC_DATA);
+/**
+ * Deploys under a sub-path (GitHub project pages) serve the site from
+ * /<repo>/, so every asset path from the manifest has to carry that prefix.
+ */
+const ASSET_ROOT = import.meta.env.BASE_URL.replace(/\/$/, "");
+const withAssetRoot = (path: string) =>
+  path.startsWith("/") ? `${ASSET_ROOT}${path}` : `${ASSET_ROOT}/${path}`;
 
 export const movies: Movie[] = rawMovies.map((movie) => ({
   ...movie,
   genres: movie.originalGenres
     .map((genre) => GENRE_TRANSLATIONS[genre])
     .filter((genre): genre is string => Boolean(genre)),
-  posterUrl: PUBLIC_BUILD ? "" : (posterManifest[movie.id] ?? "")
+  posterUrl: posterManifest[movie.id] ? withAssetRoot(posterManifest[movie.id]) : ""
 }));
 
 const movieSearchText = new Map<string, string>();
