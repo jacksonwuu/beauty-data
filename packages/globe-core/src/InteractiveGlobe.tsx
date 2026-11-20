@@ -7,6 +7,9 @@ import { BillboardLayer } from "./BillboardLayer";
 import { CountryBoundaryLayer } from "./CountryBoundaryLayer";
 import { DEFAULT_COUNTRY_COORDINATES, WORLD_COUNTRIES } from "./countries";
 import { countryCenterVector, findCountryAtLatLon, GLOBE_RADIUS, vector3ToLatLon } from "./geo";
+
+/** Default camera distance after a country is picked (globe radius is 2). */
+const COUNTRY_FOCUS_DISTANCE = 4.5;
 import { makeGlobeTexture } from "./globeTexture";
 import type { CountryFeature, GlobeCoreProps } from "./types";
 
@@ -104,6 +107,7 @@ function GlobeScene<TPayload>({
   posterAtlas = null,
   posterLookup = null,
   posterTileAtlas = null,
+  focusAzimuthOffset = 0,
   polarAngleLimit = 0.16,
   onCountryHover,
   onCountryClick,
@@ -208,7 +212,7 @@ function GlobeScene<TPayload>({
   };
 
   const focusCountry = useCallback(
-    (country: CountryFeature | null, shouldNotify = true) => {
+    (country: CountryFeature | null, shouldNotify = true, immediate = false) => {
       if (!country) {
         return;
       }
@@ -216,7 +220,13 @@ function GlobeScene<TPayload>({
       // Read the live camera position instead of capturing it, so the
       // callback identity stays stable across OrbitControls updates.
       const currentDistance = camera.position.length();
-      const distance = THREE.MathUtils.clamp(currentDistance, minCameraDistance, maxCameraDistance);
+      // Focusing a country zooms in a little, otherwise its cards stay tiny on
+      // a globe that fills the viewport.
+      const distance = THREE.MathUtils.clamp(
+        Math.min(currentDistance, COUNTRY_FOCUS_DISTANCE),
+        minCameraDistance,
+        maxCameraDistance
+      );
       const targetPosition = countryCenterVector(country, distance);
       const clampedSpherical = new THREE.Spherical().setFromVector3(targetPosition);
       clampedSpherical.phi = THREE.MathUtils.clamp(
@@ -224,12 +234,27 @@ function GlobeScene<TPayload>({
         polarAngleLimit,
         Math.PI - polarAngleLimit
       );
-      targetCameraPositionRef.current = new THREE.Vector3().setFromSpherical(clampedSpherical);
+      // The film list covers the right edge, so the country is parked slightly
+      // left of centre while the panel is open, instead of under it.
+      clampedSpherical.theta += THREE.MathUtils.degToRad(focusAzimuthOffset);
+      const nextPosition = new THREE.Vector3().setFromSpherical(clampedSpherical);
+
+      if (immediate) {
+        // Deep links should land on the country at once instead of sliding in
+        // from the default framing.
+        targetCameraPositionRef.current = null;
+        camera.position.copy(nextPosition);
+        camera.up.set(0, 1, 0);
+        camera.lookAt(0, 0, 0);
+        controlsRef.current?.update();
+      } else {
+        targetCameraPositionRef.current = nextPosition;
+      }
       if (shouldNotify) {
         onCountryClick?.(country);
       }
     },
-    [camera, maxCameraDistance, minCameraDistance, onCountryClick, polarAngleLimit]
+    [camera, focusAzimuthOffset, maxCameraDistance, minCameraDistance, onCountryClick, polarAngleLimit]
   );
 
   useEffect(() => {
@@ -242,9 +267,10 @@ function GlobeScene<TPayload>({
       return;
     }
 
+    const isFirstFocus = lastFocusedCountryIdRef.current === null;
     lastFocusedCountryIdRef.current = focusedCountryId;
     const country = countries.find((item) => item.id === focusedCountryId);
-    focusCountry(country ?? null, false);
+    focusCountry(country ?? null, false, isFirstFocus);
   }, [countries, focusCountry, focusedCountryId]);
 
   const handleGlobePointerDown = (event: ThreeEvent<PointerEvent>) => {

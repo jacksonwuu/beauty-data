@@ -587,6 +587,7 @@ function App() {
           posterAtlas={posterAtlas}
           posterTileAtlas={posterTileAtlas}
           posterLookup={lookupPosterCell}
+          focusAzimuthOffset={panelOpen && !routesOpen ? 7.5 : 0}
         />
         <p className={visuallyHiddenClass}>
           The globe plots {movies.length} films from {countryCodes.size} countries. Every film is

@@ -97,27 +97,64 @@ def download_poster(movie: dict) -> bool:
 
 
 def film_cell(movie: dict) -> Image.Image:
-    """Fallback art: a typographic card, sized for the big atlas."""
-    cell = Image.new("RGB", (CELL_W, CELL_H), (17, 23, 25))
+    """Fallback art for the ~160 films Douban has no artwork for.
+
+    Reads as a designed film card rather than a broken image: a dusk gradient,
+    the title set small, a thin gold rule and the year.
+    """
     from PIL import ImageDraw, ImageFont
 
+    cell = Image.new("RGB", (CELL_W, CELL_H), (12, 17, 19))
     draw = ImageDraw.Draw(cell)
-    try:
-        font = ImageFont.truetype("/System/Library/Fonts/Supplemental/Songti.ttc", 220)
-        small = ImageFont.truetype("/System/Library/Fonts/Supplemental/Songti.ttc", 120)
-    except OSError:
-        font = ImageFont.load_default()
-        small = font
+
+    # Vertical dusk gradient, darkest at the bottom.
+    top, bottom = (26, 42, 46), (9, 12, 14)
+    for y in range(CELL_H):
+        ratio = y / (CELL_H - 1)
+        draw.line(
+            [(0, y), (CELL_W, y)],
+            fill=(
+                round(top[0] + (bottom[0] - top[0]) * ratio),
+                round(top[1] + (bottom[1] - top[1]) * ratio),
+                round(top[2] + (bottom[2] - top[2]) * ratio),
+            ),
+        )
+
+    def font(size: int):
+        try:
+            return ImageFont.truetype("/System/Library/Fonts/Supplemental/Songti.ttc", size)
+        except OSError:
+            return ImageFont.load_default()
+
+    title_font = font(76)
+    meta_font = font(56)
+    label_font = font(34)
+
+    draw.text((CELL_W // 12, CELL_H // 9), "NO COVER ART", font=label_font, fill=(246, 196, 83, 120))
+    draw.line(
+        [(CELL_W // 12, CELL_H // 9 + 64), (CELL_W // 12 + 160, CELL_H // 9 + 64)],
+        fill=(246, 196, 83),
+        width=4,
+    )
+
     title = str(movie.get("title") or "")
     lines: list[str] = []
     while title and len(lines) < 5:
-        lines.append(title[:8])
-        title = title[8:]
-    top = CELL_H // 2 - len(lines) * 130
+        lines.append(title[:4])
+        title = title[4:]
+    block = len(lines) * 96
     for index, line in enumerate(lines):
-        draw.text((CELL_W // 10, top + index * 240), line, font=font, fill=(246, 240, 223))
-    draw.text((CELL_W // 10, CELL_H - 260), str(movie.get("year") or ""), font=small, fill=(246, 196, 83))
-    draw.rectangle([0, 0, CELL_W - 1, CELL_H - 1], outline=(70, 60, 34), width=6)
+        width = draw.textlength(line, font=title_font)
+        draw.text(
+            ((CELL_W - width) / 2, CELL_H // 2 - block // 2 + index * 96),
+            line,
+            font=title_font,
+            fill=(246, 240, 223),
+        )
+
+    meta = " · ".join(part for part in (str(movie.get("year") or ""), f"★{movie.get('rating') or ''}".rstrip("★")) if part)
+    draw.text((CELL_W // 12, CELL_H - CELL_H // 7), meta, font=meta_font, fill=(178, 196, 190))
+    draw.rectangle([0, 0, CELL_W - 1, CELL_H - 1], outline=(46, 58, 60), width=3)
     return cell
 
 

@@ -36,6 +36,8 @@ export interface GlobeCoreProps<TPayload = unknown> {
   posterAtlas?: PosterAtlas | null;
   posterLookup?: PosterAtlasLookup | null;
   posterTileAtlas?: PosterAtlasTileAtlas | null;
+  /** Degrees to rotate the camera when focusing a country, e.g. to clear a side panel. */
+  focusAzimuthOffset?: number;
   polarAngleLimit?: number;
   onCountryHover?: (country: CountryFeature | null) => void;
   onCountryClick?: (country: CountryFeature | null) => void;
