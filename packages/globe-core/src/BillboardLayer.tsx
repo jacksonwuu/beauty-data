@@ -71,6 +71,10 @@ interface BillboardCardRecord {
   normal: THREE.Vector3;
   flat: boolean;
   facing: boolean;
+  /** False until the card has faced the camera at least once. */
+  activated: boolean;
+  /** Wakes the card up so it may fetch its poster texture. */
+  activate?: () => void;
 }
 
 interface PosterCardMeshProps<TPayload> {
@@ -84,6 +88,8 @@ interface PosterCardMeshProps<TPayload> {
   countryActive: boolean;
   selected: boolean;
   billboardScale: number;
+  /** Cards on the far side of the globe wait for their first camera-facing frame. */
+  activated?: boolean;
   cardRef: React.RefObject<THREE.Group | null>;
   onItemHover?: (
     item: GlobeBillboardItem<TPayload> | null,
@@ -730,6 +736,7 @@ function PosterCardMesh<TPayload>({
   selected,
   billboardScale,
   cardRef,
+  activated = true,
   onItemHover,
   onItemClick
 }: PosterCardMeshProps<TPayload>) {
@@ -750,6 +757,14 @@ function PosterCardMesh<TPayload>({
   // One shared material per texture page: all 1200 cards point at the same
   // texture, so this effect resolves immediately after the first card.
   useEffect(() => {
+    // Half the films sit on the far side of the globe at any moment. Fetching
+    // their tiles up front doubles the first-load image weight for something
+    // nobody can see, so each card fetches only once it has faced the camera.
+    if (!activated) {
+      setMaterial(getPosterPlaceholderMaterial());
+      return;
+    }
+
     let active = true;
 
     const cachedMaterial = getCachedPosterMaterial(materialSrc);
@@ -773,7 +788,7 @@ function PosterCardMesh<TPayload>({
     return () => {
       active = false;
     };
-  }, [gl, materialSrc]);
+  }, [activated, gl, materialSrc]);
 
   // Level of detail: a tile cell (480x720) is sharp up to ~500 px on screen,
   // so the per-film full-size image is only fetched once the card actually gets
@@ -1092,6 +1107,11 @@ function BillboardItem<TPayload>({
 }: BillboardItemProps<TPayload>) {
   const groupRef = useRef<THREE.Group>(null);
   const cardRef = useRef<THREE.Group>(null);
+  // Woken by the layer the first time this card faces the camera. The setter is
+  // stable, so it can be handed to the frame loop straight away — routing it
+  // through a ref raced with the first frames and left cards stuck on the
+  // placeholder material.
+  const [activated, setActivated] = useState(false);
 
   // Registers with the layer's single frame loop, which handles camera-facing
   // orientation and back-face culling for every card in one pass. The old code
@@ -1114,7 +1134,9 @@ function BillboardItem<TPayload>({
       card,
       normal: position.clone().normalize(),
       flat: layoutMode === "flat",
-      facing: true
+      facing: true,
+      activated: false,
+      activate: () => setActivated(true)
     });
   }, [item.id, layoutMode, position, quaternion, registerItem]);
 
@@ -1127,6 +1149,7 @@ function BillboardItem<TPayload>({
         fineSrc={posterFineSrc}
         autoScale={autoScale}
         stackIndex={stackIndex}
+        activated={activated}
         countryActive={countryActive}
         selected={selected}
         billboardScale={billboardScale}
@@ -1271,6 +1294,11 @@ export function BillboardLayer<TPayload>({
           record.card.visible = true;
         }
 
+        if (!record.activated) {
+          record.activated = true;
+          record.activate?.();
+        }
+
         return;
       }
 
@@ -1282,6 +1310,12 @@ export function BillboardLayer<TPayload>({
       if (facing !== record.facing) {
         record.facing = facing;
         record.card.visible = facing;
+      }
+
+      // First sighting: let the card fetch its poster texture.
+      if (facing && !record.activated) {
+        record.activated = true;
+        record.activate?.();
       }
     });
 

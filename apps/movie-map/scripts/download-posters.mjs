@@ -9,7 +9,10 @@ const appRoot = path.resolve(__dirname, "..");
 const moviesPath = path.join(appRoot, "src/data/movies.ts");
 const csvPath = path.join(appRoot, "data/movies.csv");
 const manifestPath = path.join(appRoot, "src/data/posterManifest.json");
-const outputDir = path.join(appRoot, "public/posters");
+// Downloaded originals are the input of `scripts/build-web-atlas.py`, which
+// derives both the tiled atlas and the 480x720 per-film art from them. Keeping
+// them out of public/ means a placeholder can never shadow a real poster.
+const sourceDir = path.join(appRoot, "data/poster-sources");
 const concurrency = 8;
 
 function extractRawMovies(source) {
@@ -158,8 +161,8 @@ function escapeXml(value) {
 }
 
 async function writePlaceholder(movie) {
-  const fileName = `${movie.id}.svg`;
-  const filePath = path.join(outputDir, fileName);
+  const fileName = `movie-${movie.sourceId}.svg`;
+  const filePath = path.join(sourceDir, fileName);
   const title = escapeXml(movie.title);
   const year = escapeXml(movie.year ?? "");
   const rating = escapeXml(movie.rating ? `${movie.rating.toFixed(1)} / 10` : "No rating");
@@ -174,7 +177,7 @@ async function writePlaceholder(movie) {
   <text x="28" y="422" fill="#62d7c8" font-family="Arial, sans-serif" font-size="18" font-weight="700">${rating}</text>
 </svg>`;
   await writeFile(filePath, svg, "utf8");
-  return `/posters/${fileName}`;
+  return fileName;
 }
 
 async function downloadImage(movie, imdbId) {
@@ -208,11 +211,11 @@ async function downloadImage(movie, imdbId) {
       }
 
       const extension = extensionForContentType(contentType);
-      const fileName = `${id}.${extension}`;
-      const filePath = path.join(outputDir, fileName);
+      const fileName = `movie-${movie.sourceId}.${extension}`;
+      const filePath = path.join(sourceDir, fileName);
       await writeFile(filePath, buffer);
 
-      return `/posters/${fileName}`;
+      return fileName;
     } catch {
       // Try the next candidate URL.
     }
@@ -222,7 +225,7 @@ async function downloadImage(movie, imdbId) {
 }
 
 async function main() {
-  await mkdir(outputDir, { recursive: true });
+  await mkdir(sourceDir, { recursive: true });
 
   const source = await readFile(moviesPath, "utf8");
   const movies = extractRawMovies(source);
@@ -238,25 +241,29 @@ async function main() {
       const movie = movies[index];
       // `.webp` first: the atlas script writes a cropped 480x720 webp of every
       // poster so the globe can zoom without loading a second file.
-      const existingExtensions = ["webp", "jpg", "png"];
+      // Only real artwork counts as "already downloaded" — a leftover
+      // placeholder must not block a retry from IMDb.
+      const existingExtensions = ["jpg", "png", "jpeg", "webp"];
       const existing = existingExtensions
-        .map((extension) => `/posters/${movie.id}.${extension}`)
-        .find((posterPath) => existsSync(path.join(appRoot, "public", posterPath)));
+        .map((extension) => `movie-${movie.sourceId}.${extension}`)
+        .find((fileName) => existsSync(path.join(sourceDir, fileName)));
 
-      const existingPlaceholder = `/posters/${movie.id}.svg`;
+      const existingPlaceholder = `movie-${movie.sourceId}.svg`;
       const downloadedPath = existing
         ? null
         : await downloadImage(movie, imdbIdsBySourceId.get(movie.sourceId));
       const posterPath =
         existing ??
         downloadedPath ??
-        (existsSync(path.join(appRoot, "public", existingPlaceholder))
+        (existsSync(path.join(sourceDir, existingPlaceholder))
           ? existingPlaceholder
           : await writePlaceholder(movie));
       completed += 1;
 
       if (posterPath) {
-        manifest[movie.id] = posterPath;
+        // The atlas always writes `public/posters/<id>.webp`, whatever the
+        // source extension was.
+        manifest[movie.id] = `/posters/${movie.id}.webp`;
         success += 1;
 
         if (downloadedPath) {
